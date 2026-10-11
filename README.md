@@ -1,6 +1,6 @@
 # WideTweaks
 
-**Ultrawide fixes for games, with one switch.** By ImaHappy • [ImaHappy.dev](https://imahappy.dev/widetweaks)
+**Happy's Ultrawide Fixes** • [ImaHappy.dev](https://imahappy.dev/widetweaks)
 
 ![Order of the Sinking Star at 3440x1440, original vs WideTweaks](docs/sinking-star.jpg)
 

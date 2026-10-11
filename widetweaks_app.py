@@ -75,7 +75,7 @@ class App:
         tk.Label(head, text='WideTweaks', font=(UI, 20, 'bold'), fg=C['text'], bg=C['bg']).pack(side='left')
         link(head, 'imahappy.dev', SITE, C['accent'], (UI, 10), C['bg']).pack(side='right', anchor='s', pady=(0, 4))
         sub = tk.Frame(root, bg=C['bg']); sub.pack(fill='x', padx=24, pady=(0, 16))
-        tk.Label(sub, text='Ultrawide Game Compatibility Toolkit', font=(UI, 11), fg=C['muted'], bg=C['bg']).pack(side='left')
+        tk.Label(sub, text="Happy's Ultrawide Fixes", font=(UI, 11), fg=C['muted'], bg=C['bg']).pack(side='left')
         self.aspect = tk.Label(sub, font=(UI, 10), fg=C['muted'], bg=C['bg']); self.aspect.pack(side='right')
         detected = widetweaks.screen_resolution()
         self.res = tk.StringVar(value='%dx%d' % detected if detected else '')

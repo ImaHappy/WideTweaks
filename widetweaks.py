@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WideTweaks: Ultrawide Game Compatibility Toolkit by ImaHappy (imahappy.dev).
+"""WideTweaks: Happy's ultrawide fixes, by ImaHappy (imahappy.dev).
 Ultrawide fixes, FOV adjustments, HUD corrections, and more.
 
 Each supported game is one file in fixes/ that says where its executable is and which bytes to change. WideTweaks
@@ -14,7 +14,7 @@ Never distributes game files: it only edits your own copy, and keeps the origina
 """
 import argparse, json, os, pathlib, platform, re, shutil, struct, sys
 
-TITLE = 'WideTweaks · Ultrawide Game Compatibility Toolkit · imahappy.dev/widetweaks'
+TITLE = "WideTweaks · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
 FIXES = HERE / 'fixes'
 BACKUP = '.widetweaks-backup'
