@@ -27,10 +27,6 @@ game files").
 **Linux / Steam Deck:** download `WideTweaks_Linux.zip` and run `python3 widetweaks.py` (needs Python with Tk;
 Pillow adds the game pictures).
 
-## Known issues
-
-- **Order of the Sinking Star:** at 21:9 and wider you may see past the edges of some levels.
-
 ## Support
 
 If a fix saved your ultrawide, [a coffee on Ko-fi](https://ko-fi.com/imahappy) keeps them coming.
