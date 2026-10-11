@@ -2,13 +2,15 @@
 
 **Happy's Ultrawide Fixes** • [ImaHappy.dev](https://imahappy.dev/widetweaks)
 
-![Order of the Sinking Star at 3440x1440, original vs WideTweaks](docs/sinking-star.jpg)
+![WideTweaks](docs/app.png)
 
 ## Supported games
 
 | Game | Fix |
 |---|---|
 | [Order of the Sinking Star](https://store.steampowered.com/app/499170/) | Removes the black bars on 21:9 and 32:9 |
+
+![Order of the Sinking Star at 3440x1440, original vs WideTweaks](docs/sinking-star.jpg)
 
 ## How to use
 
