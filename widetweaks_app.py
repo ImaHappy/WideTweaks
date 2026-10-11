@@ -116,7 +116,7 @@ class App:
                 w.bind('<Button-1>', lambda e, g=g: self.select(g))
             self.games.append(g)
 
-        foot = tk.Frame(root, bg=C['bg']); foot.pack(fill='x', padx=24, pady=(12, 16))
+        foot = tk.Frame(root, bg=C['bg']); foot.pack(side='bottom', fill='x', padx=24, pady=(12, 16), before=body)   # kept when the window is short
         tk.Label(foot, text='by ImaHappy', font=(UI, 9), fg=C['faint'], bg=C['bg']).pack(side='left')
         link(foot, 'GitHub', REPO, C['muted'], (UI, 9), C['bg']).pack(side='right')
         link(foot, '♥ Support me on Ko-fi', KOFI, C['kofi'], (UI, 9), C['bg']).pack(side='right', padx=(0, 14))
