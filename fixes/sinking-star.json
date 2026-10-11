@@ -1,0 +1,15 @@
+{
+  "name": "Order of the Sinking Star",
+  "steam_appid": 499170,
+  "exe": "sinking_star.exe",
+  "summary": "Removes the 19.5:9 pillarbox: renders at your full width (21:9, 32:9, ...).",
+  "notes": "The game clamps its render shape between 1.6 and 13/6 (two floats stored side by side). Raising the upper limit to your aspect ratio renders the full screen. Found from the game log (Render target 3120x1440 on a 3440x1440 display). Tested at 3440x1440, build of 9 October 2026.",
+  "patches": [
+    {
+      "description": "maximum aspect ratio (13/6, next to the 1.6 minimum)",
+      "pattern": "AB AA 0A 40 CD CC CC 3F",
+      "offset": 0,
+      "value": "float:aspect"
+    }
+  ]
+}
