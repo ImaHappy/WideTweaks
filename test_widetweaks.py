@@ -62,7 +62,7 @@ assert widetweaks.parse_resolution(' 3440 × 1440 ') == (3440, 1440) and widetwe
 
 # Every fix file has what the patcher needs.
 for gid, f in widetweaks.fixes().items():
-    assert {'name', 'steam_appid', 'exe', 'summary', 'patches'} <= f.keys(), gid
+    assert {'name', 'steam_appid', 'exe', 'summary', 'tested', 'patches'} <= f.keys(), gid
     for p in f['patches']:
         widetweaks.value(p['value'], 16, 9); bytes.fromhex(p['pattern'].replace('??', '00'))
 print('ok')

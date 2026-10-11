@@ -5,7 +5,7 @@ Ultrawide fixes, FOV adjustments, HUD corrections, and more.
 Each supported game is one file in fixes/ that says where its executable is and which bytes to change. WideTweaks
 finds the game in your Steam libraries, backs up the executable, and writes values computed from your resolution.
 
-  widetweaks                                    the app window (also what double-clicking widetweaks.exe opens)
+  widetweaks                                    the app window (also what double-clicking WideTweaks.exe opens)
   widetweaks list                                  supported games
   widetweaks patch <game> [--res 3440x1440] [--path DIR]
   widetweaks restore <game> [--path DIR]           put the original executable back

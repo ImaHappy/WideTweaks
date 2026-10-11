@@ -23,6 +23,7 @@ Add `fixes/<id>.json`:
   "exe": "Game.exe",
   "summary": "One line on what the fix does.",
   "toggle": "Remove black bars",
+  "tested": "3440x1440 (Steam, build of 9 October 2026)",
   "notes": "How the fix was found and what it was tested with.",
   "patches": [
     { "description": "what this changes", "pattern": "AB AA 0A 40 ?? CC CC 3F", "offset": 0, "value": "float:aspect" }
@@ -41,5 +42,6 @@ Then run `python3 test_widetweaks.py`.
 
 ## Releases
 
-Pushing a tag `v*` tests, builds `widetweaks.exe` with PyInstaller on GitHub Actions, and attaches it to a release
-with `SHA256SUMS.txt` and a build attestation (`gh attestation verify widetweaks.exe --repo ImaHappy/WideTweaks`).
+Pushing a tag `v*` tests, builds `WideTweaks.exe` with PyInstaller on GitHub Actions, and attaches it to a release
+with a build attestation (`gh attestation verify WideTweaks.exe --repo ImaHappy/WideTweaks`). GitHub shows each
+file's SHA-256 next to it on the release page.

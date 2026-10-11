@@ -14,7 +14,7 @@
 
 ## How to use
 
-1. Download `widetweaks.exe` from [Releases](../../releases).
+1. Download `WideTweaks.exe` from [Releases](../../releases).
 2. Close the game and open WideTweaks.
 3. Pick the game and flip its switch on. Flip it off to undo.
 
@@ -24,7 +24,7 @@ game files").
 **After a game update,** flip the switch on again. If the update changed too much, WideTweaks says
 "unsupported game version" and leaves the game alone.
 
-**Linux / Steam Deck:** download `widetweaks-python.zip` and run `python3 widetweaks.py` (needs Python with Tk;
+**Linux / Steam Deck:** download `WideTweaks_Linux.zip` and run `python3 widetweaks.py` (needs Python with Tk;
 Pillow adds the game pictures).
 
 ## Known issues

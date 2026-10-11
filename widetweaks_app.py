@@ -1,7 +1,7 @@
 """The WideTweaks window, two columns like Flawless Widescreen: the supported games on the left (with a dot
 for their state), the selected game on the right with its on/off switch. On patches the game for your resolution
 (backup kept), off puts the original back. Opened by `widetweaks` with no arguments, which is also what
-double-clicking widetweaks.exe does."""
+double-clicking WideTweaks.exe does."""
 import json, platform, threading, tkinter as tk, urllib.parse, urllib.request, webbrowser
 import widetweaks
 try:                                    # optional: shows the game's Steam artwork (Tk alone can't show JPEG)

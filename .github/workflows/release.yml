@@ -17,18 +17,16 @@ jobs:
           python-version: '3.12'
       - run: python test_widetweaks.py
       - run: pip install pyinstaller pillow
-      - run: pyinstaller --onefile --windowed --name widetweaks --add-data "fixes;fixes" widetweaks.py
-      - run: Compress-Archive -Path widetweaks.py, widetweaks_app.py, fixes, README.md, LICENSE -DestinationPath widetweaks-python.zip
-      - run: Get-FileHash dist/widetweaks.exe, widetweaks-python.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Out-File SHA256SUMS.txt -Encoding ascii
+      - run: pyinstaller --onefile --windowed --name WideTweaks --add-data "fixes;fixes" widetweaks.py
+      - run: Compress-Archive -Path widetweaks.py, widetweaks_app.py, fixes, README.md, LICENSE -DestinationPath WideTweaks_Linux.zip
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
         with:
           subject-path: |
-            dist/widetweaks.exe
-            widetweaks-python.zip
+            dist/WideTweaks.exe
+            WideTweaks_Linux.zip
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            dist/widetweaks.exe
-            widetweaks-python.zip
-            SHA256SUMS.txt
+            dist/WideTweaks.exe
+            WideTweaks_Linux.zip
