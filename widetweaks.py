@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Happy WideTweaks (WideTweaks, HWT): Ultrawide Game Compatibility Toolkit by ImaHappy (imahappy.dev).
+"""WideTweaks: Ultrawide Game Compatibility Toolkit by ImaHappy (imahappy.dev).
 Ultrawide fixes, FOV adjustments, HUD corrections, and more.
 
 Each supported game is one file in fixes/ that says where its executable is and which bytes to change. WideTweaks
 finds the game in your Steam libraries, backs up the executable, and writes values computed from your resolution.
 
+  widetweaks                                    the app window (also what double-clicking widetweaks.exe opens)
   widetweaks list                                  supported games
   widetweaks patch <game> [--res 3440x1440] [--path DIR]
   widetweaks restore <game> [--path DIR]           put the original executable back
@@ -13,7 +14,7 @@ Never distributes game files: it only edits your own copy, and keeps the origina
 """
 import argparse, json, os, pathlib, platform, re, shutil, struct, sys
 
-TITLE = 'Happy WideTweaks · Ultrawide Game Compatibility Toolkit · imahappy.dev/widetweaks'
+TITLE = 'WideTweaks · Ultrawide Game Compatibility Toolkit · imahappy.dev/widetweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
 FIXES = HERE / 'fixes'
 BACKUP = '.widetweaks-backup'
@@ -56,9 +57,16 @@ def find_game(fix):
 
 
 def screen_resolution():
-    """The main screen's resolution on Windows; None elsewhere (pass --res)."""
+    """The main screen's resolution: Windows' primary screen; on Linux / Steam Deck xrandr's primary screen, else the
+    largest one. None if unknown (pass --res)."""
     if platform.system() != 'Windows':
-        return None
+        import subprocess
+        try:
+            out = subprocess.run(['xrandr', '--current'], capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        screens = [(bool(p), int(w), int(h)) for p, w, h in re.findall(r' connected( primary)? (\d+)x(\d+)\+', out)]
+        return max(screens, key=lambda s: (s[0], s[1] * s[2]))[1:] if screens else None
     import ctypes
     ctypes.windll.user32.SetProcessDPIAware()
     return ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1)
@@ -71,18 +79,56 @@ def value(kind, width, height):
     raise ValueError(f'unknown value kind {kind!r}')
 
 
-def apply(data, patches, width, height):
-    """Patched copy of an executable's bytes. Each patch's pattern ("AB AA ?? 40", ?? = any byte) must occur exactly
-    once; its value is written `offset` bytes from where the pattern starts. Raises ValueError otherwise."""
-    out = bytearray(data)
+def spots(data, patches):
+    """[(position, patch)]: where each patch writes. Each pattern ("AB AA ?? 40", ?? = any byte) must occur exactly
+    once, and may not use ?? where the value goes (the patched file would still match, and look original).
+    Raises ValueError otherwise."""
+    out = []
     for p in patches:
-        rx = re.compile(b''.join(b'.' if h == '??' else re.escape(bytes.fromhex(h)) for h in p['pattern'].split()), re.S)
+        tokens, at, size = p['pattern'].split(), p.get('offset', 0), len(value(p['value'], 16, 9))
+        if '??' in tokens[at:at + size]:
+            raise ValueError(f"{p['description']}: the pattern has ?? where the value is written")
+        rx = re.compile(b''.join(b'.' if h == '??' else re.escape(bytes.fromhex(h)) for h in tokens), re.S)
         hits = [m.start() for m in rx.finditer(data)]
         if len(hits) != 1:
             raise ValueError(f"{p['description']}: pattern found {len(hits)} times (expected once): unsupported game version")
+        out.append((hits[0] + at, p))
+    return out
+
+
+def apply(data, patches, width, height):
+    """Patched copy of an executable's bytes (see spots)."""
+    out = bytearray(data)
+    for at, p in spots(data, patches):
         v = value(p['value'], width, height)
-        out[hits[0] + p.get('offset', 0):hits[0] + p.get('offset', 0) + len(v)] = v
+        out[at:at + len(v)] = v
     return bytes(out)
+
+
+def ours(fix, data, backup):
+    """True if data is the backup patched by WideTweaks (same bytes everywhere except where the fix writes), so not
+    a newer game version that happens to have the same size."""
+    if len(data) != len(backup):
+        return False
+    try:
+        theirs = bytearray(data)
+        for at, p in spots(backup, fix['patches']):
+            n = len(value(p['value'], 16, 9))
+            theirs[at:at + n] = backup[at:at + n]
+    except ValueError:
+        return False
+    return theirs == backup
+
+
+def write(exe, data):
+    """Replace the executable in one step, so a crash or full disk never leaves half a file."""
+    tmp = exe.with_name(exe.name + '.widetweaks-tmp')
+    try:
+        tmp.write_bytes(data)
+        shutil.copymode(exe, tmp)
+        os.replace(tmp, exe)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def patch(fix, game, width, height):
@@ -94,10 +140,10 @@ def patch(fix, game, width, height):
         shutil.copy2(exe, backup)                       # fresh original (also after a game update)
     except ValueError:
         # Already patched (e.g. for another resolution): patch again from the original, if it is this version.
-        if not backup.is_file() or backup.stat().st_size != len(data):
+        if not backup.is_file() or not ours(fix, data, original := backup.read_bytes()):
             raise
-        new = apply(backup.read_bytes(), fix['patches'], width, height)
-    exe.write_bytes(new)
+        new = apply(original, fix['patches'], width, height)
+    write(exe, new)
     return exe, backup
 
 
@@ -105,9 +151,32 @@ def restore(fix, game):
     exe = game / fix['exe']
     backup = exe.with_name(exe.name + BACKUP)
     if not backup.is_file():
-        raise SystemExit(f'No backup next to {exe}: nothing to restore (or use Steam\'s "Verify integrity of game files").')
-    shutil.copy2(backup, exe)
+        raise ValueError(f'No backup next to {exe}: nothing to restore (or use Steam\'s "Verify integrity of game files").')
+    original = backup.read_bytes()
+    if not ours(fix, exe.read_bytes(), original):
+        raise ValueError(f'{exe.name} is not the WideTweaks-patched backup (game updated?): left as it is.')
+    write(exe, original)
     return exe
+
+
+def status(fix, game):
+    """'missing' (no executable), 'off' (original), 'on' (patched by WideTweaks) or 'unsupported' (unknown version)."""
+    exe = game / fix['exe'] if game else None
+    if not exe or not exe.is_file():
+        return 'missing'
+    data = exe.read_bytes()
+    try:
+        spots(data, fix['patches'])
+        return 'off'
+    except ValueError:
+        backup = exe.with_name(exe.name + BACKUP)
+        return 'on' if backup.is_file() and ours(fix, data, backup.read_bytes()) else 'unsupported'
+
+
+def parse_resolution(text):
+    """(width, height) from "3440x1440", "3440 × 1440", "3440:1440"..., or None."""
+    m = re.fullmatch(r'\s*(\d{3,5})\s*[x×*: ]\s*(\d{3,5})\s*', text or '')
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 def main(argv=None):
@@ -119,7 +188,10 @@ def main(argv=None):
         s.add_argument('game', help='game id from "widetweaks list"')
         s.add_argument('--path', type=pathlib.Path, help='game install folder (default: found through Steam)')
         if name == 'patch':
-            s.add_argument('--res', help='your resolution, e.g. 3440x1440 (default: the main screen, on Windows)')
+            s.add_argument('--res', help='your resolution, e.g. 3440x1440 (default: the main screen)')
+    if not (sys.argv[1:] if argv is None else argv):       # double-clicked: open the window
+        import widetweaks_app
+        return widetweaks_app.run()
     a = ap.parse_args(argv)
     print(TITLE)
     all_fixes = fixes()
@@ -130,9 +202,12 @@ def main(argv=None):
     fix = all_fixes.get(a.game) or ap.error(f'unknown game {a.game!r}; see "widetweaks list"')
     game = a.path or find_game(fix) or ap.error(f"{fix['name']} not found in your Steam libraries; pass --path")
     if a.cmd == 'restore':
-        print(f'Restored {restore(fix, game)}')
+        try:
+            print(f'Restored {restore(fix, game)}')
+        except ValueError as e:
+            raise SystemExit(str(e))
         return
-    res = (tuple(int(n) for n in a.res.lower().split('x')) if a.res else screen_resolution()) or ap.error('pass your resolution, e.g. --res 3440x1440')
+    res = (parse_resolution(a.res) if a.res else screen_resolution()) or ap.error('pass your resolution, e.g. --res 3440x1440')
     try:
         exe, backup = patch(fix, game, *res)
     except (ValueError, OSError) as e:

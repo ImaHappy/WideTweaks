@@ -5,21 +5,30 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  id-token: write       # build attestation: proves the .exe was built here, from this commit
+  attestations: write
 jobs:
   windows-exe:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.12'
       - run: python test_widetweaks.py
-      - run: pip install pyinstaller
-      - run: pyinstaller --onefile --name widetweaks --add-data "fixes;fixes" widetweaks.py
-      - run: Compress-Archive -Path widetweaks.py, fixes, README.md, LICENSE -DestinationPath widetweaks-python.zip
-      - uses: softprops/action-gh-release@v2
+      - run: pip install pyinstaller pillow
+      - run: pyinstaller --onefile --windowed --name widetweaks --add-data "fixes;fixes" widetweaks.py
+      - run: Compress-Archive -Path widetweaks.py, widetweaks_app.py, fixes, README.md, LICENSE -DestinationPath widetweaks-python.zip
+      - run: Get-FileHash dist/widetweaks.exe, widetweaks-python.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Out-File SHA256SUMS.txt -Encoding ascii
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
+        with:
+          subject-path: |
+            dist/widetweaks.exe
+            widetweaks-python.zip
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             dist/widetweaks.exe
             widetweaks-python.zip
+            SHA256SUMS.txt
