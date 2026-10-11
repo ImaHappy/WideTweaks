@@ -150,6 +150,7 @@ class App:
                                        padx=10, pady=3, highlightthickness=1, highlightbackground=C['line'])
         self.compare_button.bind('<Button-1>', lambda e: self.compare(not self.comparing))
         self.comparing = False
+        self.detail.bind('<Configure>', lambda e: self.fit_art())
         self.art.bind('<Motion>', lambda e: self.comparing and self.draw_compare(e.y))
         for w in (row, text, self.toggle_label, self.state):    # the whole strip flips the switch
             w.configure(cursor='hand2'); w.bind('<Button-1>', lambda e: self.switch.event_generate('<Button-1>'))
@@ -164,8 +165,8 @@ class App:
         """The game's Steam header image across the top of the right column, fetched once in the background."""
         if not Image:
             return
-        if 'art' in g:
-            return self.art.configure(image=g['art'] or '')
+        if 'art_raw' in g:
+            return self.fit_art()
         self.art.configure(image='')
         def fetch():
             try:
@@ -194,8 +195,9 @@ class App:
         self.art.configure(cursor='sb_v_double_arrow' if self.comparing else '')
         if self.comparing:
             self.draw_compare(None)
-        elif self.selected:
-            self.art.configure(image=self.selected.get('art') or '')
+        else:
+            self.art.configure(image='')
+            self.fit_art()
 
     def draw_compare(self, y):
         """Original above y, fixed below it (so both sides' bars show at once), with a divider and labels."""
@@ -262,13 +264,23 @@ class App:
         self.none.pack(pady=12) if not shown else self.none.pack_forget()
 
     def set_art(self, g, data):
-        g['art'] = None
-        if data:
-            im = Image.open(io.BytesIO(data))
-            w = max(1, self.detail.winfo_width() - 2)
-            g['art'] = ImageTk.PhotoImage(im.resize((w, round(im.height * w / im.width)), Image.LANCZOS))
-        if g is self.selected and not self.comparing:
-            self.art.configure(image=g['art'] or '')
+        if data:                                    # a failed download is tried again next time the game is picked
+            g['art_raw'] = Image.open(io.BytesIO(data)); g['art_raw'].load()
+        if g is self.selected:
+            self.fit_art()
+
+    def fit_art(self):
+        """The selected game's picture at the right column's current width (again whenever the window resizes)."""
+        g, w = self.selected, self.detail.winfo_width() - 2
+        if not g or 'art_raw' not in g or w < 50:   # not laid out yet: the <Configure> that follows draws it
+            return
+        if g.get('art_width') != w:
+            im = g['art_raw']
+            g['art'], g['art_width'] = ImageTk.PhotoImage(im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)), w
+        if self.comparing:
+            self.draw_compare(None)
+        else:
+            self.art.configure(image=g['art'])
 
     def show_details(self, open_):
         self.details_open = open_
