@@ -11,6 +11,7 @@
 | [DAVE THE DIVER](https://store.steampowered.com/app/1868140/) | Full width, ultrawide HUD, unlocked FPS |
 | [Order of the Sinking Star](https://store.steampowered.com/app/499170/) | Removes the black bars on 21:9 and 32:9 |
 
+![DAVE THE DIVER at 3440x1440, original vs WideTweaks](docs/dave-the-diver.jpg)
 ![Order of the Sinking Star at 3440x1440, original vs WideTweaks](docs/sinking-star.jpg)
 
 ## How to use
