@@ -145,12 +145,12 @@ class App:
         self.toggle_label = tk.Label(text, font=(UI, 11, 'bold'), fg=C['text'], bg=C['pick'], anchor='w'); self.toggle_label.pack(fill='x')
         self.state = tk.Label(text, font=(MONO, 8), bg=C['pick'], anchor='w', justify='left', wraplength=380)
         self.state.pack(fill='x')
-        # "Compare": swaps the picture on top for original vs fixed, split where the mouse is.
+        # "Compare": swaps the picture on top for original (above) vs fixed (below), split where the mouse is.
         self.compare_button = tk.Label(row, text='◐  Compare', font=(UI, 9), fg=C['accent'], bg=C['card'], cursor='hand2',
                                        padx=10, pady=3, highlightthickness=1, highlightbackground=C['line'])
         self.compare_button.bind('<Button-1>', lambda e: self.compare(not self.comparing))
         self.comparing = False
-        self.art.bind('<Motion>', lambda e: self.comparing and self.draw_compare(e.x))
+        self.art.bind('<Motion>', lambda e: self.comparing and self.draw_compare(e.y))
         for w in (row, text, self.toggle_label, self.state):    # the whole strip flips the switch
             w.configure(cursor='hand2'); w.bind('<Button-1>', lambda e: self.switch.event_generate('<Button-1>'))
         # Details (how the fix works, where the game is), folded away until clicked.
@@ -191,36 +191,36 @@ class App:
         self.comparing = on and bool(self.selected and self.selected.get('previews'))
         self.compare_button.configure(fg=C['bg'] if self.comparing else C['accent'], bg=C['accent'] if self.comparing else C['card'],
                                       text='✕  Close' if self.comparing else '◐  Compare')
-        self.art.configure(cursor='sb_h_double_arrow' if self.comparing else '')
+        self.art.configure(cursor='sb_v_double_arrow' if self.comparing else '')
         if self.comparing:
             self.draw_compare(None)
         elif self.selected:
             self.art.configure(image=self.selected.get('art') or '')
 
-    def draw_compare(self, x):
-        """Original left of x, fixed right of it, with a divider and corner labels."""
+    def draw_compare(self, y):
+        """Original above y, fixed below it (so both sides' bars show at once), with a divider and labels."""
         before, after = self.selected['previews']
         w = max(1, self.detail.winfo_width() - 2)
         if self.selected.get('compare_size') != w:            # scaled to the column once, then reused while moving
             self.selected['compare_size'] = w
             self.selected['compare'] = [im.resize((w, round(im.height * w / im.width)), Image.LANCZOS) for im in (before, after)]
         b, a = self.selected['compare']
-        x = w // 2 if x is None else max(0, min(w, x))
-        out = a.copy(); out.paste(b.crop((0, 0, x, b.height)), (0, 0))
-        d = ImageDraw.Draw(out)
-        d.rectangle((x - 1, 0, x, out.height), fill=C['accent'])
-        d.ellipse((x - 11, out.height // 2 - 11, x + 11, out.height // 2 + 11), fill=C['accent'])
-        y = out.height // 2
-        d.polygon(((x - 7, y), (x - 2, y - 5), (x - 2, y + 5)), fill=C['bg'])
-        d.polygon(((x + 7, y), (x + 2, y - 5), (x + 2, y + 5)), fill=C['bg'])
-        for text, left in (('ORIGINAL', True), ('WIDETWEAKS', False)):
-            tw = d.textlength(text, font=FONT)
-            x0 = 10 if left else w - tw - 26
-            d.rounded_rectangle((x0, 10, x0 + tw + 16, 32), 5, fill=C['bg'])
-            d.text((x0 + 8, 21), text, font=FONT, fill=C['text'], anchor='lm')
         art = self.selected.get('art')
-        if art and art.height() > out.height:                 # same height as the Steam picture, so nothing jumps
-            framed = Image.new('RGB', (w, art.height()), C['bg']); framed.paste(out, (0, (art.height() - out.height) // 2))
+        top = (art.height() - a.height) // 2 if art and art.height() > a.height else 0   # padding, so nothing jumps
+        y = a.height // 2 if y is None else max(0, min(a.height, y - top))
+        out = a.copy(); out.paste(b.crop((0, 0, w, y)), (0, 0))
+        d = ImageDraw.Draw(out)
+        x = w // 2
+        d.rectangle((0, y - 1, w, y), fill=C['accent'])
+        d.ellipse((x - 11, y - 11, x + 11, y + 11), fill=C['accent'])
+        d.polygon(((x, y - 7), (x - 5, y - 2), (x + 5, y - 2)), fill=C['bg'])
+        d.polygon(((x, y + 7), (x - 5, y + 2), (x + 5, y + 2)), fill=C['bg'])
+        for text, y0 in (('ORIGINAL', 10), ('WIDETWEAKS', a.height - 32)):
+            tw = d.textlength(text, font=FONT)
+            d.rounded_rectangle((10, y0, 10 + tw + 16, y0 + 22), 5, fill=C['bg'])
+            d.text((18, y0 + 11), text, font=FONT, fill=C['text'], anchor='lm')
+        if top:
+            framed = Image.new('RGB', (w, art.height()), C['bg']); framed.paste(out, (0, top))
             out = framed
         self.compare_image = ImageTk.PhotoImage(out)
         self.art.configure(image=self.compare_image)
