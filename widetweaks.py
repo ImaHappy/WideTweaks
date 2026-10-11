@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""WideFix: ultrawide / any-aspect-ratio patcher for PC games.
+"""Happy WideTweaks (WideTweaks, HWT): Ultrawide Game Compatibility Toolkit by ImaHappy (imahappy.dev).
+Ultrawide fixes, FOV adjustments, HUD corrections, and more.
 
-Each supported game is one file in fixes/ that says where its executable is and which bytes to change. WideFix
+Each supported game is one file in fixes/ that says where its executable is and which bytes to change. WideTweaks
 finds the game in your Steam libraries, backs up the executable, and writes values computed from your resolution.
 
-  widefix list                                  supported games
-  widefix patch <game> [--res 3440x1440] [--path DIR]
-  widefix restore <game> [--path DIR]           put the original executable back
+  widetweaks list                                  supported games
+  widetweaks patch <game> [--res 3440x1440] [--path DIR]
+  widetweaks restore <game> [--path DIR]           put the original executable back
 
-Never distributes game files: it only edits your own copy, and keeps the original next to it (*.widefix-backup).
+Never distributes game files: it only edits your own copy, and keeps the original next to it (*.widetweaks-backup).
 """
 import argparse, json, os, pathlib, platform, re, shutil, struct, sys
 
+TITLE = 'Happy WideTweaks · Ultrawide Game Compatibility Toolkit · imahappy.dev/widetweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
 FIXES = HERE / 'fixes'
-BACKUP = '.widefix-backup'
+BACKUP = '.widetweaks-backup'
 
 
 def fixes():
@@ -109,22 +111,23 @@ def restore(fix, game):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog='widefix', description='Ultrawide / any-aspect-ratio patcher for PC games.')
+    ap = argparse.ArgumentParser(prog='widetweaks', description=TITLE)
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list', help='supported games')
     for name in ('patch', 'restore'):
         s = sub.add_parser(name)
-        s.add_argument('game', help='game id from "widefix list"')
+        s.add_argument('game', help='game id from "widetweaks list"')
         s.add_argument('--path', type=pathlib.Path, help='game install folder (default: found through Steam)')
         if name == 'patch':
             s.add_argument('--res', help='your resolution, e.g. 3440x1440 (default: the main screen, on Windows)')
     a = ap.parse_args(argv)
+    print(TITLE)
     all_fixes = fixes()
     if a.cmd == 'list':
         for gid, f in all_fixes.items():
             print(f"{gid:24} {f['name']}  (Steam {f['steam_appid']}) - {f['summary']}")
         return
-    fix = all_fixes.get(a.game) or ap.error(f'unknown game {a.game!r}; see "widefix list"')
+    fix = all_fixes.get(a.game) or ap.error(f'unknown game {a.game!r}; see "widetweaks list"')
     game = a.path or find_game(fix) or ap.error(f"{fix['name']} not found in your Steam libraries; pass --path")
     if a.cmd == 'restore':
         print(f'Restored {restore(fix, game)}')
@@ -134,7 +137,7 @@ def main(argv=None):
         exe, backup = patch(fix, game, *res)
     except (ValueError, OSError) as e:
         raise SystemExit(f'Not patched: {e}')
-    print(f"Patched {exe} for {res[0]}x{res[1]} (aspect {res[0] / res[1]:.4f}).\nOriginal kept as {backup.name}; undo: widefix restore {a.game}")
+    print(f"Patched {exe} for {res[0]}x{res[1]} (aspect {res[0] / res[1]:.4f}).\nOriginal kept as {backup.name}; undo: widetweaks restore {a.game}")
 
 
 if __name__ == '__main__':

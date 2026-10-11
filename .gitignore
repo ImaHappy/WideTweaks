@@ -3,4 +3,4 @@ build/
 dist/
 *.spec
 *.exe
-*.widefix-backup
+*.widetweaks-backup
