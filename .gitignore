@@ -4,3 +4,4 @@ dist/
 *.spec
 *.exe
 *.widetweaks-backup
+*.widetweaks-stamp

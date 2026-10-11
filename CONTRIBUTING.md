@@ -31,12 +31,20 @@ Add `fixes/<id>.json`:
 }
 ```
 
-- `toggle`: the switch's label in the app, e.g. "Remove black bars" or "Fix FOV".
-- `pattern`: hex bytes, `??` for any byte (not where the value goes). It must occur exactly once in the executable,
-  or WideTweaks refuses.
+- `toggle`: the switch's label in the app, e.g. "Remove Black Bars" or "Unlock FPS". A patch can name its own
+  `"toggle"` to put it on another switch (one switch per name).
+- `"file"` on a patch: patch another file of the game than `exe` (relative to the game folder), e.g. a Unity asset
+  bundle (`*.bundle`): WideTweaks decompresses it, patches the uncompressed bytes and stores only the changed blocks
+  uncompressed.
+- `pattern`: hex bytes, `??` for any byte. It must occur exactly once in the file, and the value must change at least
+  one of its fixed bytes, or WideTweaks refuses.
 - `offset`: where the value goes, counted from the start of the pattern.
-- `value`: `float:aspect` writes your width ÷ height as a 32-bit float.
-- Optional: `fixes/previews/<id>-before.jpg` and `<id>-after.jpg` (about 960 px wide) add the Compare button.
+- `value`: `float:aspect` writes your width ÷ height as a 32-bit float; `float:zoom` how much a 16:9 picture must grow
+  to fill your width (1.34 at 21:9, 2 at 32:9), `float:zoom:1.366` the same capped at 1.366; `bytes:B0 01 C3` writes those bytes.
+- `exe`: the file to patch, relative to the game folder (for Unity IL2CPP games usually `GameAssembly.dll`).
+- Optional: `fixes/previews/<id>-<switch>-before.jpg` and `-after.jpg` (about 960 px wide, switch name lowercase with
+  dashes, e.g. `dave-the-diver-unlock-fps-before.jpg`) add a Compare button to that switch; the first switch may use
+  `<id>-before.jpg`.
 
 Then run `python3 test_widetweaks.py`.
 

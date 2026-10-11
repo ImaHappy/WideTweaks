@@ -32,11 +32,13 @@ with tempfile.TemporaryDirectory() as d:
     exe.write_bytes(b'\x00' * 50); assert widetweaks.status(fix, game) == 'unsupported'
     assert widetweaks.status(fix, game / 'nowhere') == 'missing' and widetweaks.status(fix, None) == 'missing'
 
-# A ?? where the value is written is refused (the patched file would still look original, and the backup be lost).
+# A value that leaves the pattern matching is refused (the patched file would still look original, and the backup
+# be lost); one that overwrites a ?? along with fixed bytes is fine.
 try:
     widetweaks.apply(original, [{**fix['patches'][0], 'pattern': '?? ?? ?? ?? CD CC CC 3F'}], 3440, 1440); raise AssertionError('should refuse')
 except ValueError:
     pass
+assert widetweaks.apply(b'\x01\x02\x03\x04', [{'description': 'x', 'pattern': '01 ?? 03', 'value': 'bytes:09 09'}], 16, 9) == b'\x09\x09\x03\x04'
 
 # A game update (same size, other bytes) is never mistaken for our patch: restore and status leave it alone.
 with tempfile.TemporaryDirectory() as d:
@@ -44,11 +46,8 @@ with tempfile.TemporaryDirectory() as d:
     widetweaks.patch(fix, game, 3440, 1440)
     updated = b'\x01' * 100 + original[100:108] + b'\x01' * 100      # new version, unpatched, same size
     exe.write_bytes(updated)
-    try:
-        widetweaks.restore(fix, game); raise AssertionError('should refuse')
-    except ValueError:
-        pass
-    assert exe.read_bytes() == updated
+    widetweaks.restore(fix, game)                                       # already original: left alone,
+    assert exe.read_bytes() == updated and widetweaks.status(fix, game) == 'off'   # never the old backup over it
     moved = b'\x01' * 208                                                  # same size, pattern gone
     exe.write_bytes(moved)
     assert widetweaks.status(fix, game) == 'unsupported'
@@ -58,11 +57,61 @@ with tempfile.TemporaryDirectory() as d:
         pass
     assert exe.read_bytes() == moved
 
+assert widetweaks.value('bytes:B0 01 C3', 16, 9) == b'\xb0\x01\xc3'
+assert struct.unpack('<f', widetweaks.value('float:zoom', 5120, 1440))[0] == 2 and struct.unpack('<f', widetweaks.value('float:zoom', 1920, 1200))[0] == 1
+assert abs(struct.unpack('<f', widetweaks.value('float:zoom:1.366', 5120, 1440))[0] - 1.366) < 1e-6
 assert widetweaks.parse_resolution(' 3440 × 1440 ') == (3440, 1440) and widetweaks.parse_resolution('3440') is None
+
+# Unity asset bundles: LZ4 (with an overlapping copy) decompresses, and a compressed bundle comes back uncompressed
+# with the same data, so patterns can be found in it.
+assert widetweaks.lz4_block(bytes.fromhex('2f6162020013f00130313233343536373839616263646566'), 56) == b'ab' * 20 + b'0123456789abcdef'   # real LZ4 (overlapping copy)
+def lz4(b):                                     # literals-only LZ4, enough to build a test bundle
+    n = len(b) - 15
+    return bytes([0xF0]) + b'\xff' * (n // 255) + bytes([n % 255]) + b
+payload = b'GameObject ' * 40
+info = bytes(16) + struct.pack('>i', 1) + struct.pack('>IIH', len(payload), len(lz4(payload)), 2) + struct.pack('>i', 0)
+head = b'UnityFS\0' + struct.pack('>I', 8) + b'5.x.x\0' + b'2022.3\0'
+body = lz4(info)
+bundle = head + struct.pack('>qIII', 0, len(body), len(info), 0x43 | 0x200)
+bundle += bytes(-len(bundle) % 16) + body
+bundle += bytes(-len(bundle) % 16) + lz4(payload)
+plain = widetweaks.unity_bundle(bundle)
+assert plain.endswith(payload) and widetweaks.unity_bundle(plain) == plain and widetweaks.unity_bundle(b'MZ') == b'MZ'
+
+# A compressed bundle in a fix: patched (only the changed block stored uncompressed, the rest as it was), reported
+# on, restored to the exact original file.
+blocks = [b'A' * 300 + b'MARKER42' + b'A' * 300, b'B' * 600]
+info = bytes(16) + struct.pack('>i', 2) + b''.join(struct.pack('>IIH', len(b), len(lz4(b)), 2) for b in blocks) + struct.pack('>i', 0)
+raw = head + struct.pack('>qIII', 0, len(lz4(info)), len(info), 0x43 | 0x200)
+raw += bytes(-len(raw) % 16) + lz4(info)
+raw += bytes(-len(raw) % 16) + b''.join(lz4(b) for b in blocks)
+uni = {'exe': 'data.bundle', 'toggle': 'T', 'patches': [{'description': 'm', 'pattern': '4D 41 52 4B 45 52 34 32', 'value': 'bytes:58'}]}
+with tempfile.TemporaryDirectory() as d:
+    game = pathlib.Path(d); (game / 'data.bundle').write_bytes(raw)
+    widetweaks.patch(uni, game, 16, 9)
+    out = (game / 'data.bundle').read_bytes()
+    assert b'XARKER42' in widetweaks.read(game / 'data.bundle') and lz4(blocks[1]) in out and len(out) < len(raw) + 700
+    assert widetweaks.states(uni, game) == {'T': 'on'}
+    widetweaks.restore(uni, game)
+    assert (game / 'data.bundle').read_bytes() == raw and widetweaks.status(uni, game) == 'off'
+
+# Switches: each turns its own patches on and off, from the one original.
+two = {'exe': 'g.exe', 'toggle': 'A', 'patches': [
+    {'description': 'a', 'pattern': '11 22 33', 'value': 'bytes:AA'},
+    {'description': 'b', 'pattern': '44 55 66', 'value': 'bytes:BB', 'toggle': 'B'}]}
+with tempfile.TemporaryDirectory() as d:
+    game = pathlib.Path(d); (game / 'g.exe').write_bytes(b'\x11\x22\x33\x00\x44\x55\x66' + bytes(100))
+    start = (game / 'g.exe').read_bytes()
+    widetweaks.setup(two, game, 16, 9, {'B'})
+    assert widetweaks.states(two, game) == {'A': 'off', 'B': 'on'}
+    widetweaks.setup(two, game, 16, 9, {'A'})
+    assert widetweaks.states(two, game) == {'A': 'on', 'B': 'off'} and (game / 'g.exe').read_bytes()[:7] == b'\xaa\x22\x33\x00\x44\x55\x66'
+    widetweaks.setup(two, game, 16, 9, set())
+    assert (game / 'g.exe').read_bytes() == start and widetweaks.status(two, game) == 'off'
 
 # Every fix file has what the patcher needs.
 for gid, f in widetweaks.fixes().items():
-    assert {'name', 'steam_appid', 'exe', 'summary', 'tested', 'patches'} <= f.keys(), gid
+    assert {'name', 'steam_appid', 'exe', 'summary', 'toggle', 'tested', 'patches'} <= f.keys(), gid
     for p in f['patches']:
         widetweaks.value(p['value'], 16, 9); bytes.fromhex(p['pattern'].replace('??', '00'))
 print('ok')

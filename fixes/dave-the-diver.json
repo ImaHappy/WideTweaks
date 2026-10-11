@@ -1,0 +1,246 @@
+{
+  "name": "DAVE THE DIVER",
+  "steam_appid": 1868140,
+  "exe": "GameAssembly.dll",
+  "summary": "Your screen's full resolution, 21:9 and 32:9 included, instead of 16:9 with side panels.",
+  "toggle": "Remove Black Bars",
+  "tested": "3440x1440 (Steam, build of October 2026)",
+  "notes": "The game only offers 16:9 resolutions (IsTargetRatio) and defaults to the largest 16:9 size (GetBestResolution). Its view setup (CoUpdateResolution) divides the screen shape by 16:9 and, when wider, narrows the camera and shows side-art panels; making that ratio 1 keeps the full width and hides the panels, as the old BepInEx mod did at runtime.",
+  "patches": [
+    {
+      "description": "resolution list: accept every aspect ratio (IsTargetRatio returns true)",
+      "pattern": "66 0F 6E C9 0F 5B C9 66 0F 6E C2 0F 5B C0 F3 0F 5E C8 F3 0F 5C 0D ?? ?? ?? ?? F3 0F 59 0D ?? ?? ?? ?? F3 0F 2C C1 85 C0 0F 94 C0 C3",
+      "offset": 0,
+      "value": "bytes:B0 01 C3"
+    },
+    {
+      "description": "default resolution: keep the screen's own, not the largest 16:9 (GetBestResolution)",
+      "pattern": "F3 0F 5E F0 F3 0F 5C F7 F3 41 0F 59 F0 F3 0F 2C C6 85 C0 0F 84 ?? ?? ?? ??",
+      "offset": 19,
+      "value": "bytes:90 E9"
+    },
+    {
+      "description": "view setup (CameraResolution.CoUpdateResolution): screen shape ÷ 16:9 becomes 1, so the side-art panels hide and the camera keeps the full width (divss xmm9,[16:9] -> divss xmm9,xmm9)",
+      "pattern": "45 0F 5B C9 66 0F 6E C0 0F 5B C0 F3 44 0F 5E C8 F3 44 0F 5E 0D ?? ?? ?? ??",
+      "offset": 16,
+      "value": "bytes:F3 45 0F 5E C9 0F 1F 40 00"
+    },
+    {
+      "description": "UI layout boxes (Unity AspectRatioFitter, Fit In Parent): on a screen wider than the box's shape, fill it instead of narrowing to a centred 16:9 box, so the HUD, dims and cinematic bars reach the edges",
+      "pattern": "0F 2F D8 0F 97 C0 83 7B 20 03 40 0F 94 C7 33 D2 3B C7 75 7F 0F 28 F1 F3 0F 59 F2",
+      "offset": 20,
+      "value": "bytes:E9 F7 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "description": "frame limit 60 -> none, when VSync changes (CameraResolution.UpdateVSyncValue)",
+      "pattern": "33 D2 B9 3C 00 00 00 0F 28 74 24 50 48 8B 5C 24 78",
+      "offset": 3,
+      "value": "bytes:FF FF FF FF",
+      "toggle": "Unlock FPS"
+    },
+    {
+      "description": "frame limit 60 -> none, at startup (TimeManager.Init)",
+      "pattern": "33 D2 B9 3C 00 00 00 E8 ?? ?? ?? ?? 33 D2 33 C9 E8",
+      "offset": 3,
+      "value": "bytes:FF FF FF FF",
+      "toggle": "Unlock FPS"
+    },
+    {
+      "description": "VSync on every refresh, not every 2nd-4th (which held 120-240 Hz screens to 60)",
+      "pattern": "83 FB 01 7C 0C 83 FB 04 7E 0C BB 04 00 00 00 EB 05 BB 01 00 00 00",
+      "offset": 0,
+      "value": "bytes:EB 0F",
+      "toggle": "Unlock FPS"
+    },
+    {
+      "description": "VSync kept on above 60 Hz (the refresh / interval <= 60 test)",
+      "pattern": "F2 0F 5E F0 66 0F 2F CE 72 37 33 D2 8B CB E8",
+      "offset": 8,
+      "value": "bytes:90 90",
+      "toggle": "Unlock FPS"
+    },
+    {
+      "description": "VSync watchdog: don't switch VSync off for running above 63 fps (UpdateVSyncWatchdog)",
+      "pattern": "0F 2F 0D ?? ?? ?? ?? 77 20 F3 0F 5C C7 F3 0F 5F F0",
+      "offset": 7,
+      "value": "bytes:90 90",
+      "toggle": "Unlock FPS"
+    },
+    {
+      "description": "VSync watchdog: same check inlined in CameraResolution.Update",
+      "pattern": "0F 2F 0D ?? ?? ?? ?? 77 12 F3 0F 5C C7 F3 0F 5F F0",
+      "offset": 7,
+      "value": "bytes:90 90",
+      "toggle": "Unlock FPS"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/be2f279a7770773a0b40e2affc558ab0.bundle",
+      "description": "dialogue layout: LeftDialoguePanel as a centred 1920x1080 (16:9) box, so its portraits, box and text stay together",
+      "pattern": "00 00 00 00 00 20 52 45 B4 3A 47 6D 00 00 00 00 00 20 22 E5 A4 DF C3 BF 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/be2f279a7770773a0b40e2affc558ab0.bundle",
+      "description": "dialogue layout: CenterDialoguePanel as a centred 1920x1080 (16:9) box, so its portraits, box and text stay together",
+      "pattern": "00 00 00 00 00 20 33 BC E1 C8 C9 A7 00 00 00 00 00 20 22 E5 A4 DF C3 BF 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/be2f279a7770773a0b40e2affc558ab0.bundle",
+      "description": "dialogue layout: RightDialoguePanel as a centred 1920x1080 (16:9) box, so its portraits, box and text stay together",
+      "pattern": "00 00 00 00 00 20 5A 6B 61 94 78 9E 00 00 00 00 00 20 22 E5 A4 DF C3 BF 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/baa63b89e2eb2021984c92801f550cdb.bundle",
+      "description": "cinematic bars: LetterBox_CutScene/Top three times as wide as the 16:9 cutscene frame, centred (covers up to 48:9)",
+      "pattern": "00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 D7 87 B6 03 D6 2D BC EA 00 00 00 00 2D B2 5D 3F 00 00 80 3F 9A 99 99 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 80 BF 2D B2 5D 3F 00 00 00 40 9A 99 99 3F",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/baa63b89e2eb2021984c92801f550cdb.bundle",
+      "description": "cinematic bars: LetterBox_CutScene/Bottom three times as wide as the 16:9 cutscene frame, centred (covers up to 48:9)",
+      "pattern": "00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 D7 87 B6 03 D6 2D BC EA 00 00 00 00 CD CC 4C BE 00 00 80 3F 4C 37 09 3E 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 80 BF CD CC 4C BE 00 00 00 40 4C 37 09 3E",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/6d4ee9910f5656707fa7cddf2721138c.bundle",
+      "description": "pause / Return to Boat popup (PauseMenuPanel): full screen instead of a 1920-wide box pinned to the right",
+      "pattern": "00 00 00 00 1C A1 45 80 15 38 FD F0 00 00 00 00 1C A1 9E 4B 84 90 7B AC 00 00 80 3F 00 00 00 3F 00 00 80 3F 00 00 00 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/85d5c86f68c9034c2ddd026bd939af87.bundle",
+      "description": "sushi bar menu (ContentsGroup/ManagementPanel): full screen instead of a 1920x1080 box, so its bottom band reaches the edges",
+      "pattern": "00 00 00 00 0D 1C CE AC 68 22 18 EB 00 00 00 00 0D 1C FD 85 80 AA 52 C0 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/85d5c86f68c9034c2ddd026bd939af87.bundle",
+      "description": "sushi bar menu (ContentsGroup/ManagementPanel): full screen instead of a 1920x1080 box, so its bottom band reaches the edges",
+      "pattern": "00 00 00 00 4E B4 98 C4 84 89 D9 81 00 00 00 00 4E B4 4D C7 EB F6 F5 02 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/c6294796e2f4f82a4c3cc2d0768ebed8.bundle",
+      "description": "intro animation: zoom CutAnimCtrl (x) so the 16:9 intro fills your width, at most 1.366x (what its 13.4% black bars hid, so no art is cropped on 32:9)",
+      "pattern": "00 00 00 00 A1 44 DE F5 55 46 57 16 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 80 3F",
+      "offset": 40,
+      "value": "float:zoom:1.366",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/c6294796e2f4f82a4c3cc2d0768ebed8.bundle",
+      "description": "intro animation: zoom CutAnimCtrl (y) so the 16:9 intro fills your width, at most 1.366x (what its 13.4% black bars hid, so no art is cropped on 32:9)",
+      "pattern": "00 00 00 00 A1 44 DE F5 55 46 57 16 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 80 3F",
+      "offset": 44,
+      "value": "float:zoom:1.366",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/c6294796e2f4f82a4c3cc2d0768ebed8.bundle",
+      "description": "intro animation: zoom LetterBox_CutScene (x) so the 16:9 intro fills your width, at most 1.366x (what its 13.4% black bars hid, so no art is cropped on 32:9)",
+      "pattern": "00 00 00 00 A1 44 D4 4E 7F 30 9F 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 80 3F",
+      "offset": 40,
+      "value": "float:zoom:1.366",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/c6294796e2f4f82a4c3cc2d0768ebed8.bundle",
+      "description": "intro animation: zoom LetterBox_CutScene (y) so the 16:9 intro fills your width, at most 1.366x (what its 13.4% black bars hid, so no art is cropped on 32:9)",
+      "pattern": "00 00 00 00 A1 44 D4 4E 7F 30 9F 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 80 3F",
+      "offset": 44,
+      "value": "float:zoom:1.366",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/c6294796e2f4f82a4c3cc2d0768ebed8.bundle",
+      "description": "intro animation: zoom LetterBox (x) so the 16:9 intro fills your width, at most 1.366x (what its 13.4% black bars hid, so no art is cropped on 32:9)",
+      "pattern": "00 00 00 00 A1 44 D1 53 18 B3 57 26 00 00 00 80 00 00 00 80 00 00 00 80 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 80 3F",
+      "offset": 40,
+      "value": "float:zoom:1.366",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/c6294796e2f4f82a4c3cc2d0768ebed8.bundle",
+      "description": "intro animation: zoom LetterBox (y) so the 16:9 intro fills your width, at most 1.366x (what its 13.4% black bars hid, so no art is cropped on 32:9)",
+      "pattern": "00 00 00 00 A1 44 D1 53 18 B3 57 26 00 00 00 80 00 00 00 80 00 00 00 80 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 80 3F",
+      "offset": 44,
+      "value": "float:zoom:1.366",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/47c837abba25b7f2c4754e323a92080c.bundle",
+      "description": "area title card (AreaInfoPanel): full screen instead of a 1920x1080 box pinned bottom-left",
+      "pattern": "00 00 00 00 E5 56 CF F1 7D FE F7 21 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/47c837abba25b7f2c4754e323a92080c.bundle",
+      "description": "area title card (Area_Timeline): full screen instead of a 1920x1080 box pinned bottom-left",
+      "pattern": "00 00 00 00 E5 56 D6 10 8D DC 97 72 00 00 00 00 E5 56 4C E5 79 5A 31 09 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/47c837abba25b7f2c4754e323a92080c.bundle",
+      "description": "area title card (Area): full screen instead of a 1920x1080 box pinned bottom-left",
+      "pattern": "00 00 00 00 E5 56 38 B5 61 F3 88 9B 00 00 00 00 E5 56 4C E5 79 5A 31 09 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 87 44",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/a764af4da3107fddf5725f76454af9e5.bundle",
+      "description": "global popup (Popups/Layer2/MiniGameSkipPopup): full width instead of a 1920-wide box",
+      "pattern": "00 00 00 00 70 83 21 24 45 B5 1B BB 00 00 00 00 70 83 FE 10 14 89 60 2F 00 00 00 3F 00 00 00 00 00 00 00 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/a764af4da3107fddf5725f76454af9e5.bundle",
+      "description": "global popup (Popups/Layer2/GameNormalPopup): full width instead of a 1920-wide box",
+      "pattern": "00 00 00 00 70 83 E6 1E 68 2D 11 31 00 00 00 00 70 83 FE 10 14 89 60 2F 00 00 00 3F 00 00 00 00 00 00 00 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/a764af4da3107fddf5725f76454af9e5.bundle",
+      "description": "global popup (Popups/Layer2/GameHoldPopup): full width instead of a 1920-wide box",
+      "pattern": "00 00 00 00 70 83 40 D8 2E 7D 97 01 00 00 00 00 70 83 FE 10 14 89 60 2F 00 00 00 3F 00 00 00 00 00 00 00 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "DaveTheDiver_Data/StreamingAssets/aa/StandaloneWindows64/a764af4da3107fddf5725f76454af9e5.bundle",
+      "description": "global popup (Popups/Layer2/GameWarninglPopup): full width instead of a 1920-wide box",
+      "pattern": "00 00 00 00 70 83 26 FC 1D 1E 8B 66 00 00 00 00 70 83 FE 10 14 89 60 2F 00 00 00 3F 00 00 00 00 00 00 00 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 F0 44 00 00 00 00",
+      "offset": 24,
+      "value": "bytes:00 00 00 00 00 00 00 00 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+      "toggle": "Ultrawide HUD"
+    }
+  ]
+}
