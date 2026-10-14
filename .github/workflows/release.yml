@@ -17,8 +17,8 @@ jobs:
           python-version: '3.12'
       - run: python test_widetweaks.py
       - run: pip install pyinstaller pillow lz4
-      - run: pyinstaller --onefile --windowed --name WideTweaks --add-data "fixes;fixes" widetweaks.py
-      - run: Compress-Archive -Path widetweaks.py, widetweaks_app.py, fixes, README.md, LICENSE -DestinationPath WideTweaks_Linux.zip
+      - run: pyinstaller --onefile --windowed --name WideTweaks --icon icon.ico --add-data "fixes;fixes" --add-data "icon.png;." widetweaks.py
+      - run: Compress-Archive -Path widetweaks.py, widetweaks_app.py, icon.png, widetweaks.desktop, fixes, README.md, LICENSE -DestinationPath WideTweaks_Linux.zip
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
         with:
           subject-path: |

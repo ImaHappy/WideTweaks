@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=WideTweaks
+Comment=Happy's Ultrawide Fixes
+Exec=python3 widetweaks.py
+Path=.
+Icon=widetweaks
+StartupWMClass=Widetweaks
+Categories=Game;Utility;
+Terminal=false

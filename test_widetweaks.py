@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """python3 test_widetweaks.py: the patch logic on fake executables (no game needed)."""
-import pathlib, struct, tempfile
+import pathlib, struct, tempfile, zlib
 import widetweaks
 
 fix = widetweaks.fixes()['sinking-star']
@@ -113,5 +113,45 @@ with tempfile.TemporaryDirectory() as d:
 for gid, f in widetweaks.fixes().items():
     assert {'name', 'steam_appid', 'exe', 'summary', 'toggle', 'tested', 'patches'} <= f.keys(), gid
     for p in f['patches']:
-        widetweaks.value(p['value'], 16, 9); bytes.fromhex(p['pattern'].replace('??', '00'))
+        assert ('value' in p) != ('layout' in p), (gid, p['description'])
+        if 'value' in p: widetweaks.value(p['value'], 16, 9)
+        bytes.fromhex(p['pattern'].replace('??', '00'))
+
+# Values for a centred 1920x1080 UI: at 3440x1440 the 16:9 edge is 330 units from the screen edge.
+assert struct.unpack('<f', widetweaks.value('float:left:255', 3440, 1440))[0] == -75 and struct.unpack('<f', widetweaks.value('float:left:255', 1920, 1080))[0] == 255
+assert struct.unpack('<i', widetweaks.value('int:stage:1920', 3440, 1440))[0] == 2580 and struct.unpack('<i', widetweaks.value('int:stage:1920', 1920, 1200))[0] == 1920
+v = widetweaks.value('swfdouble:right:1920', 3440, 1440); assert struct.unpack('<d', v[4:] + v[:4])[0] == 2250
+
+# SWF matrices survive a round trip, also when the translation needs more bits.
+for m in ({'scale': None, 'rotate': None, 'translate': (5133, 17730)}, {'scale': (98304, 65536), 'rotate': None, 'translate': (-1467, 0)}):
+    assert widetweaks.swf_matrix(widetweaks.swf_matrix_bytes(m), 0)[0] == m
+
+# A Scaleform movie in a .big archive: laid out (stage widened, a left clip kept at the screen edge, a centre clip
+# moved with the stage), packed back into its chunk (growing into the padding), and restored to the exact original.
+def place(name, x, y, depth):
+    b = widetweaks.swf_matrix_bytes({'scale': None, 'rotate': None, 'translate': (x * 20, y * 20)})
+    body = bytes([0x26]) + struct.pack('<HH', depth, 1) + b + name + b'\0'          # move, character, matrix, name
+    return struct.pack('<H', 26 << 6 | len(body)) + body
+r = widetweaks.Bits(); r.write(16, 5); [r.write(v & 0xffff, 16) for v in (0, 1920 * 20, 0, 1080 * 20)]
+swf = bytearray(b'GFX\x08\0\0\0\0' + r.bytes() + b'\0\x1e\x01\0' + place(b'mc_left', 100, 900, 1) + place(b'mc_mid', 960, 540, 2) + b'\0\0')
+struct.pack_into('<I', swf, 4, len(swf))
+packed = b'CFX\x08' + struct.pack('<I', len(swf)) + zlib.compress(bytes(swf[8:]), 9)
+res = bytes(0x30) + b'\xd9\x39\x2a\x44' + b'Hud'.ljust(0x24, b'\0') + struct.pack('<IIII', len(packed), 0, 8, 0)   # 0x68 bytes
+big = bytes(16) + b'\xd9\x39\x2a\x44' + struct.pack('<II', 0x68 + len(packed), 0x68 + len(packed)) + bytes(4) + res + packed
+big += bytes(-len(big) % 0x1000) + b'\xd9next chunk'
+assert len(widetweaks.big_movies(big)) == 1 and widetweaks.big_view(b'MZ') == b'MZ'
+anchor = ' '.join(f'{x:02X}' for x in widetweaks.MOVIE + b'Hud\0') + ' 47 46 58 08 ?? ?? ?? ?? ' + ' '.join(f'{x:02X}' for x in r.bytes())   # the stage: changes when widened
+sf = {'exe': 'UI.big', 'toggle': 'HUD', 'patches': [{'description': 'hud', 'pattern': anchor, 'layout': {'stage': 'wide', 'left': ['mc_left']}}]}
+with tempfile.TemporaryDirectory() as d:
+    game = pathlib.Path(d); (game / 'UI.big').write_bytes(big)
+    widetweaks.patch(sf, game, 3440, 1440)
+    out = (game / 'UI.big').read_bytes(); assert len(out) == len(big) and out.endswith(b'\xd9next chunk')
+    movie = widetweaks.read(game / 'UI.big').split(widetweaks.MOVIE + b'Hud\0')[1]
+    b = widetweaks.Bits(movie, 8); n = b.read(5); assert [b.read(n, True) for _ in range(4)][1] == 2580 * 20
+    tags = {nm: movie[movie.rindex(b'\x26', 0, movie.index(nm)) + 5:movie.index(nm)] for nm in (b'mc_left', b'mc_mid')}
+    assert widetweaks.swf_matrix(tags[b'mc_left'], 0)[0]['translate'] == (100 * 20, 900 * 20)       # left clip: stays at the screen edge
+    assert widetweaks.swf_matrix(tags[b'mc_mid'], 0)[0]['translate'] == (1290 * 20, 540 * 20)       # centre clip: moves with the stage
+    assert widetweaks.states(sf, game) == {'HUD': 'on'}
+    widetweaks.restore(sf, game)
+    assert (game / 'UI.big').read_bytes() == big and widetweaks.status(sf, game) == 'off'
 print('ok')

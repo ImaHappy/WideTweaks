@@ -1,0 +1,130 @@
+{
+  "name": "Sleeping Dogs: Definitive Edition",
+  "steam_appid": 307690,
+  "exe": "sdhdship.exe",
+  "summary": "Cutscenes, menus and the HUD at your screen's full width on 21:9 and 32:9, minimap intact.",
+  "toggle": "Remove Black Bars",
+  "tested": "3440x1440 (Steam, build 979344, October 2026)",
+  "notes": "Gameplay is already Hor+. Remove Black Bars: cutscenes and menus set a cinematic flag (byte 0xA of the render-mode block the game copies in every frame) that forces a centred 16:9 viewport and camera; clearing it after each copy keeps them at full width. That also widens the upgrades screen, whose skill tree then scrolls to the right edge of a 1920 stage while the visible area ends at 1920+dx, so its scroller gets the real edge. Ultrawide HUD: the HUD movie (UI.big) gets a stage as wide as your screen, its edge clips (minimap ring, health, money, weapon, objective popup) move to the screen edges, the low-health tint takes the stage width, and the engine's UI width factor becomes 1.0 so the minimap, blips and objective markers use the whole screen; the world map's objectives/legend move to the sides and its cursor reaches the edges. The Nexus 'Black Bars Fix' (older build, hard-coded 3440x1440) instead overwrote shared 16:9 constants, including a reciprocal lookup table entry, which breaks its minimap; WideTweaks leaves those alone.",
+  "patches": [
+    {
+      "description": "render mode setter: after copying the block in, clear its cinematic flag (mov byte [flag],0), so cutscenes keep the full-width viewport, aspect and FOV",
+      "pattern": "48 8B 01 48 89 05 A6 84 FC 01 8B 41 08 89 05 A5 84 FC 01 C3 CC CC CC CC CC CC CC CC",
+      "offset": 19,
+      "value": "bytes:C6 05 A0 84 FC 01 00 C3"
+    },
+    {
+      "file": "UI.big",
+      "description": "upgrades skill tree scroller: visible right edge 1920+dx (the stage is centred), not Stage.width (r7 + Stage.width)",
+      "pattern": "96 04 00 04 07 08 AE 1C 96 02 00 08 AF 4E 47 87 01 00 09",
+      "offset": 0,
+      "value": "bytes:96 0B 00 04 07 06",
+      "toggle": "Remove Black Bars"
+    },
+    {
+      "file": "UI.big",
+      "description": "upgrades skill tree scroller: its edge value (the double after the bytes above)",
+      "pattern": "96 04 00 04 07 08 AE 1C 96 02 00 08 AF 4E 47 87 01 00 09",
+      "offset": 6,
+      "value": "swfdouble:right:1920",
+      "toggle": "Remove Black Bars"
+    },
+    {
+      "file": "UI.big",
+      "description": "upgrades skill tree scroller: visible right edge 1920+dx instead of Stage.width (Stage.width - r4)",
+      "pattern": "96 02 00 08 AE 1C 96 02 00 08 AF 4E 96 02 00 04 04",
+      "offset": 0,
+      "value": "bytes:96 09 00 06",
+      "toggle": "Remove Black Bars"
+    },
+    {
+      "file": "UI.big",
+      "description": "upgrades skill tree scroller: its edge value (the double after the bytes above)",
+      "pattern": "96 02 00 08 AE 1C 96 02 00 08 AF 4E 96 02 00 04 04",
+      "offset": 4,
+      "value": "swfdouble:right:1920",
+      "toggle": "Remove Black Bars"
+    },
+    {
+      "description": "UI width factor on screens wider than 16:9 (up to 32:9): 1.0 instead of 16:9 / aspect (movss [scaleX],xmm2 -> xmm0), for the full-width HUD: the minimap, its blips and the objective markers then use the whole screen",
+      "pattern": "F3 0F 10 05 46 A2 FC 00 F3 0F 11 15 9E 0D 9F 01 F3 0F 11 05 9A 0D 9F 01 C3",
+      "offset": 11,
+      "value": "bytes:05",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "description": "world map cursor limits: horizontal margin m - dx instead of m, so the cursor reaches your screen edges (min x = m - dx, max x = 1920 - m + dx; vertical unchanged); rewritten in place, dx kept in the bytes it jumps over",
+      "pattern": "F3 0F 10 56 20 F3 0F 11 54 24 30 F3 0F 11 54 24 34 48 8B 44 24 30 48 89 46 08 F3 0F 2C C8 66 0F 6E C7 66 0F 6E C9 0F 5B C0 48 8B CE F3 0F 5C C2 0F 5B C9 F3 0F 11 44 24 30 F3 0F 5C CA F3 0F 11 4C 24 34 48 8B 44 24 30 48 89 46 10",
+      "offset": 0,
+      "value": "bytes:F3 0F 10 56 20 F3 0F 11 56 0C F3 0F 2C C8 F3 0F 2A C9 F3 0F 5C CA F3 0F 11 4E 14 F3 0F 5C 15 17 00 00 00 F3 0F 11 56 08 F3 0F 2A C7 F3 0F 5C C2 F3 0F 11 46 10 48 8B CE EB 12",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "description": "world map cursor limits: dx (16:9 edge to screen edge, 1920x1080 units) read by the code above",
+      "pattern": "F3 0F 10 56 20 F3 0F 11 54 24 30 F3 0F 11 54 24 34 48 8B 44 24 30 48 89 46 08 F3 0F 2C C8 66 0F 6E C7 66 0F 6E C9 0F 5B C0 48 8B CE F3 0F 5C C2 0F 5B C9 F3 0F 11 44 24 30 F3 0F 5C CA F3 0F 11 4C 24 34 48 8B 44 24 30 48 89 46 10",
+      "offset": 58,
+      "value": "float:right:0",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "UI.big",
+      "description": "HUD movie: stage as wide as your screen; edge clips to the screen edges, the rest stays centred",
+      "pattern": "00 57 69 64 65 54 77 65 61 6B 73 20 6D 6F 76 69 65 20 48 75 64 00 47 46 58 08 ?? ?? ?? ?? 88 00 01 2C 00 00 00 2A 30 00",
+      "layout": {
+        "stage": "wide",
+        "left": [
+          "mc_HealthBar",
+          "circle_mask",
+          "mcOuterRing",
+          "mc_MinimapPulse",
+          "mc_secondaryTutorial",
+          "mcHeatMeter",
+          "mc_healthupdate",
+          "mc_xpFlasher",
+          "mc_TallyList",
+          "mc_RadioStations",
+          "mc_CombatMeter",
+          "mc_ObjectiveFlasherTarget",
+          "mc_MissionHealthTarget"
+        ],
+        "right": [
+          "mc_socialWidget",
+          "mc_smartphone_anim",
+          "mc_smartphone",
+          "mc_smartphoneReminderIcon",
+          "mc_RaceHUD",
+          "mc_ObjectiveDist",
+          "mc_Money",
+          "mc_WeaponSwitcher"
+        ],
+        "widen": [
+          "mc_fullscreenFX"
+        ]
+      },
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "UI.big",
+      "description": "HUD low-health tint: the stage width instead of 1920 (centred by the HUD's own script)",
+      "pattern": "96 05 00 07 80 07 00 00 87 01 00 06 17 96 05 00 07 38 04 00 00 87 01 00 05",
+      "offset": 4,
+      "value": "int:stage:1920",
+      "toggle": "Ultrawide HUD"
+    },
+    {
+      "file": "UI.big",
+      "description": "world map: objectives and collectibles to the left edge, legend to the right",
+      "pattern": "BF 06 14 00 00 00 26 37 00 B7 00 20 E6 10 0D 5A 6D 63 5F 6C 65 67 65 6E 64 00",
+      "layout": {
+        "left": [
+          "mc_objectives",
+          "mc_CollectiblesStats"
+        ],
+        "right": [
+          "mc_legend"
+        ]
+      },
+      "toggle": "Ultrawide HUD"
+    }
+  ]
+}

@@ -41,6 +41,13 @@ Add `fixes/<id>.json`:
 - `offset`: where the value goes, counted from the start of the pattern.
 - `value`: `float:aspect` writes your width ÷ height as a 32-bit float; `float:zoom` how much a 16:9 picture must grow
   to fill your width (1.34 at 21:9, 2 at 32:9), `float:zoom:1.366` the same capped at 1.366; `bytes:B0 01 C3` writes those bytes.
+- More values for a centred 1920x1080 UI: `float:left:255` / `float:right:1665` move an x to your screen's left /
+  right edge (as far as it was from the 16:9 edge), `int:stage:1920` is the stage width that fills your screen,
+  `swfdouble:right:1920` the same as `float:right` stored as an ActionScript 2 double.
+- United Front `.big` archives (Sleeping Dogs): their Scaleform movies are decompressed, so patterns can be found in
+  them. A patch with `"layout"` instead of a value lays out the movie its pattern is in:
+  `{"stage": "wide", "left": [clip names], "right": [...], "widen": [...]}` (`stage: wide` makes the stage as wide as
+  your screen and keeps the rest centred). Changed movies are stored zlib-compressed in their place.
 - `exe`: the file to patch, relative to the game folder (for Unity IL2CPP games usually `GameAssembly.dll`).
 - Optional: `fixes/previews/<id>-<switch>-before.jpg` and `-after.jpg` (about 960 px wide, switch name lowercase with
   dashes, e.g. `dave-the-diver-unlock-fps-before.jpg`) add a Compare button to that switch; the first switch may use

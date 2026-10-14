@@ -12,7 +12,7 @@ finds the game in your Steam libraries, backs up the executable, and writes valu
 
 Never distributes game files: it only edits your own copy, and keeps the original next to it (*.widetweaks-backup).
 """
-import argparse, json, os, pathlib, platform, re, shutil, struct, sys
+import argparse, json, os, pathlib, platform, re, shutil, struct, sys, zlib
 try:
     import lz4.block as lz4
 except ImportError:
@@ -79,9 +79,19 @@ def screen_resolution():
 def value(kind, width, height):
     """The bytes a patch writes: 'float:aspect' is width/height as a 32-bit float; 'float:zoom' how much a 16:9
     picture must grow to fill your width (1.34 at 21:9, 2 at 32:9), 'float:zoom:1.366' the same but at most 1.366
-    (e.g. what black bars hid, so nothing is cropped); 'bytes:B0 01 C3' is those bytes (e.g. new instructions)."""
+    (e.g. what black bars hid, so nothing is cropped); 'float:left:255' / 'float:right:1665' an x on a centred 1920x1080
+    UI moved to your screen's left / right edge as far as it was from the 16:9 one; 'bytes:B0 01 C3' is those bytes
+    (e.g. new instructions)."""
     if kind == 'float:aspect':
         return struct.pack('<f', width / height)
+    dx = max(0.0, (1080 * width / height - 1920) / 2)           # 16:9 edge to screen edge, in 1920x1080 units
+    if kind.startswith(('float:left:', 'float:right:')):
+        return struct.pack('<f', float(kind.split(':')[2]) + (dx if kind.startswith('float:right') else -dx))
+    if kind.startswith('swfdouble:right:'):                     # an ActionScript 2 double: its 32-bit halves swapped
+        b = struct.pack('<d', float(kind.split(':')[2]) + dx)
+        return b[4:] + b[:4]
+    if kind == 'int:stage:1920':                                # a 1920x1080 stage as wide as your screen
+        return struct.pack('<i', round(1920 + 2 * dx))
     if kind.startswith('float:zoom'):
         cap = float(kind.split(':')[2]) if kind.count(':') == 2 else float('inf')
         return struct.pack('<f', min(cap, max(1.0, width / height * 9 / 16)))
@@ -96,8 +106,9 @@ def spots(data, patches):
     look original). Raises ValueError otherwise."""
     out = []
     for p in patches:
-        tokens, at, v = p['pattern'].split(), p.get('offset', 0), value(p['value'], 21, 9)   # checked at an ultrawide shape
-        if all(t == '??' or bytes.fromhex(t)[0] == b for t, b in zip(tokens[at:at + len(v)], v)):
+        tokens, at = p['pattern'].split(), p.get('offset', 0)
+        v = value(p['value'], 21, 9) if 'value' in p else b''       # checked at an ultrawide shape; a layout has no value
+        if v and all(t == '??' or bytes.fromhex(t)[0] == b for t, b in zip(tokens[at:at + len(v)], v)):
             raise ValueError(f"{p['description']}: the value changes no fixed byte of the pattern")
         rx = re.compile(b''.join(b'.' if h == '??' else re.escape(bytes.fromhex(h)) for h in tokens), re.S)
         hits = [m.start() for m in rx.finditer(data)]
@@ -108,11 +119,19 @@ def spots(data, patches):
 
 
 def apply(data, patches, width, height):
-    """Patched copy of an executable's bytes (see spots)."""
+    """Patched copy of an executable's bytes (see spots). A patch with a "layout" instead of a value lays out the
+    Scaleform movie its pattern is in (see swf_layout), after the values are written."""
     out = bytearray(data)
+    layouts = []
     for at, p in spots(data, patches):
+        if 'layout' in p:
+            layouts.append((at, p['layout'])); continue
         v = value(p['value'], width, height)
         out[at:at + len(v)] = v
+    for at, layout in sorted(layouts, reverse=True):     # from the end: a movie's new length moves only what follows
+        start = out.rfind(MOVIE, 0, at + len(MOVIE)); start = out.index(b'\0', start + len(MOVIE)) + 1   # the pattern may start on the marker
+        end = out.find(MOVIE, start); end = len(out) if end == -1 else end
+        out[start:end] = swf_layout(bytes(out[start:end]), layout, width, height)
     return bytes(out)
 
 
@@ -263,7 +282,7 @@ def repack(raw, plain, new):
     that didn't change keeps its compressed bytes from `raw`, only changed blocks are stored uncompressed (Unity allows
     a mix). Other files: `new` itself."""
     if not raw.startswith(b'UnityFS\0'):
-        return new
+        return big_pack(raw, plain, new) if len(plain) > len(raw) and plain.startswith(raw) else new
     head, flags, info, blocks = bundle_parts(raw)
     at, out = len(plain) - sum(b[0] for b in blocks), []      # where the data starts in the uncompressed layout
     for size, packed, f, o in blocks:
@@ -271,6 +290,161 @@ def repack(raw, plain, new):
         out.append((size, f, raw[o:o + packed]) if same else (size, f & ~0x3f, new[at:at + size]))
         at += size
     return build(head, flags, info, out)
+
+
+MOVIE = b'\0WideTweaks movie '    # in big_view: marks a movie appended after the archive
+
+
+def big_movies(data):
+    """[(name, at)] for the zlib-compressed Scaleform movies (CFX) in a United Front .big archive (Sleeping Dogs):
+    each sits in a chunk (type hash D9 39 2A 44, size at +4 and +8) after a resource header that names it."""
+    out, at = [], data.find(b'CFX')
+    while at != -1:
+        if at >= 0x78 and data[at - 0x78:at - 0x74] == b'\xd9\x39\x2a\x44' and data[at + 8] == 0x78:   # 0x78: zlib
+            out.append((data[at - 0x34:at - 0x14].split(b'\0')[0].decode('latin-1'), at))
+        at = data.find(b'CFX', at + 1)
+    return out
+
+
+def big_view(data):
+    """A .big archive with its Scaleform movies also appended uncompressed (each after MOVIE + name + NUL), so byte
+    patterns and layouts can work on them. Other files come back as they are."""
+    if not data.startswith(b'\0' * 16) or not (movies := big_movies(data)):
+        return data
+    out = bytearray(data)
+    for name, at in movies:
+        out += MOVIE + name.encode('latin-1') + b'\0' + b'GFX' + data[at + 3:at + 8] + zlib.decompressobj().decompress(data[at + 8:at + 8 + (1 << 24)])
+    return bytes(out)
+
+
+def big_pack(raw, plain, new):
+    """`new` (a patched big_view of `raw`) as an archive: each changed movie recompressed into its chunk, which may
+    grow into the zero padding after it (to the next 4 KB); raises ValueError if one doesn't fit."""
+    out = bytearray(new[:len(raw)])
+    movies = dict(big_movies(raw))
+    def parts(view):
+        cut = view.split(MOVIE)[1:]
+        return {c[:c.index(b'\0')].decode('latin-1'): c[c.index(b'\0') + 1:] for c in cut}
+    before, after = parts(plain), parts(new)
+    for name, movie in after.items():
+        if movie == before[name]:
+            continue
+        at = movies[name]; chunk = at - 0x78
+        old_end = chunk + 0x10 + struct.unpack_from('<I', raw, chunk + 4)[0]
+        room = (old_end + 0xfff) & ~0xfff
+        if raw[old_end:room].strip(b'\0'):
+            raise ValueError(f'{name}: no room after it in the archive')
+        packed = b'CFX' + struct.pack('<B', movie[3]) + struct.pack('<I', len(movie)) + zlib.compress(movie[8:], 9)
+        size = align(at - chunk - 0x10 + len(packed))
+        if chunk + 0x10 + size > room:
+            raise ValueError(f'{name}: the patched movie is {chunk + 0x10 + size - room} bytes too big for its place')
+        out[at:room] = packed + bytes(room - at - len(packed))
+        struct.pack_into('<I', out, at - 0x10, len(packed))
+        struct.pack_into('<II', out, chunk + 4, size, size)
+    return bytes(out)
+
+
+class Bits:
+    """Big-endian bit reader/writer for SWF records (RECT, MATRIX)."""
+    def __init__(self, data=b'', at=0):
+        self.data, self.pos, self.bits = data, at * 8, []
+    def read(self, n, signed=False):
+        v = 0
+        for _ in range(n):
+            v = v << 1 | (self.data[self.pos >> 3] >> (7 - (self.pos & 7))) & 1; self.pos += 1
+        return v - (1 << n) if signed and n and v >> (n - 1) else v
+    def end(self):
+        return (self.pos + 7) >> 3
+    def write(self, v, n):
+        self.bits += [(v >> (n - 1 - i)) & 1 for i in range(n)]
+    def bytes(self):
+        b = self.bits + [0] * (-len(self.bits) % 8)
+        return bytes(int(''.join(map(str, b[i:i + 8])), 2) for i in range(0, len(b), 8))
+
+
+def nbits(*vals):
+    return max(1, max(abs(v) for v in vals).bit_length() + 1)
+
+
+def swf_matrix(data, at):
+    """({'scale', 'rotate', 'translate'}, end) of the SWF MATRIX at `at` (twips; scale and rotate None if absent)."""
+    b, m = Bits(data, at), {}
+    for k in ('scale', 'rotate'):
+        m[k] = (b.read(n := b.read(5), True), b.read(n, True)) if b.read(1) else None
+    n = b.read(5); m['translate'] = (b.read(n, True), b.read(n, True))
+    return m, b.end()
+
+
+def swf_matrix_bytes(m):
+    b = Bits()
+    for k in ('scale', 'rotate'):
+        b.write(bool(m[k]), 1)
+        if m[k]:
+            n = nbits(*m[k]); b.write(n, 5); b.write(m[k][0] & (1 << n) - 1, n); b.write(m[k][1] & (1 << n) - 1, n)
+    n = nbits(*m['translate']) if any(m['translate']) else 0
+    b.write(n, 5)
+    if n:
+        b.write(m['translate'][0] & (1 << n) - 1, n); b.write(m['translate'][1] & (1 << n) - 1, n)
+    return b.bytes()
+
+
+def swf_layout(movie, layout, width, height):
+    """A Scaleform movie (uncompressed GFX/SWF, 1920x1080 stage) laid out for your screen: the clips named in
+    layout["left"] / ["right"] move to the screen's left / right edge as far as they were from the 16:9 one,
+    ["widen"] grow sideways around the centre to your width; with layout["stage"] == "wide" the stage itself becomes
+    your width (the game then fills the screen with it, no side bars) and everything else stays centred. Only the
+    main timeline's placements move (scripts that place clips themselves need their own patches)."""
+    dx = max(0.0, (1080 * width / height - 1920) / 2)
+    wide = layout.get('stage') == 'wide'
+    b = Bits(movie, 8); n = b.read(5); rect = [b.read(n, True) for _ in range(4)]; o = b.end() + 4
+    head = bytearray(movie[:8])
+    if wide:
+        rect[1] = round((1920 + 2 * dx) * 20); w = Bits(); n = nbits(*rect); w.write(n, 5)
+        for v in rect: w.write(v & (1 << n) - 1, n)
+        head += w.bytes() + movie[b.end():o]
+    else:
+        head += movie[8:o]
+    out, role, depth_of = head, {}, {}
+    names = {**{k: 'left' for k in layout.get('left', [])}, **{k: 'right' for k in layout.get('right', [])},
+             **{k: 'widen' for k in layout.get('widen', [])}}
+    while o < len(movie):
+        code, size = movie[o + 1] << 2 | movie[o] >> 6, movie[o] & 63
+        hl = 2
+        if size == 63:
+            size = struct.unpack_from('<I', movie, o + 2)[0]; hl = 6
+        body = movie[o + hl:o + hl + size]; o += hl + size
+        if code in (26, 70) and body and body[0] & 4:            # PlaceObject2/3 with a matrix
+            flags, q = body[0], 1 + (code == 70)
+            depth = struct.unpack_from('<H', body, q)[0]; q += 2
+            if code == 70 and body[1] & 8:
+                q = body.index(b'\0', q) + 1                     # class name
+            q += 2 if flags & 2 else 0                           # character id
+            m, end = swf_matrix(body, q)
+            if flags & 32:                                       # name (after colour transform and ratio)
+                r = end
+                if flags & 8:
+                    c = Bits(body, r); a, mul = c.read(1), c.read(1); k = c.read(4)
+                    for _ in range(4 * (a + mul)): c.read(k)
+                    r = c.end()
+                r += 2 if flags & 16 else 0
+                role[depth] = names.get(body[r:body.index(b'\0', r)].decode('latin-1'), 'centre')
+            what = role.get(depth, 'centre')
+            if wide or what != 'centre':
+                tx, ty = m['translate']; shift = round(dx * 20)
+                base = shift if wide else 0
+                if what == 'left': tx += base - shift
+                elif what == 'right': tx += base + shift
+                elif what == 'widen':
+                    k = (1920 + 2 * dx) / 1920; sx, sy = m['scale'] or (65536, 65536)
+                    tx = round(19200 + (tx - 19200) * k) + base; m['scale'] = (round(sx * k), sy)
+                else: tx += base
+                m['translate'] = (tx, ty)
+                body = body[:q] + swf_matrix_bytes(m) + body[end:]
+        out += (struct.pack('<HI', code << 6 | 63, len(body)) if len(body) >= 63 or hl == 6 else struct.pack('<H', code << 6 | len(body))) + body
+        if code == 0:
+            break
+    struct.pack_into('<I', out, 4, len(out))
+    return bytes(out)
 
 
 def files(fix):
@@ -281,8 +455,13 @@ def files(fix):
     return out
 
 
+def view(data):
+    """A file's bytes as patches see them: Unity bundles decompressed, .big archives with their movies appended."""
+    return big_view(unity_bundle(data))
+
+
 def read(path):
-    return unity_bundle(path.read_bytes())
+    return view(path.read_bytes())
 
 
 def toggle(fix, p):
@@ -305,7 +484,7 @@ def setup(fix, game, width, height, on):
         exe = game / name
         backup = exe.with_name(exe.name + BACKUP)
         raw = exe.read_bytes()
-        data = unity_bundle(raw)
+        data = view(raw)
         try:
             spots(data, patches)                        # every pattern there: this is the original
             raw_original, original, fresh = raw, data, True
@@ -313,7 +492,7 @@ def setup(fix, game, width, height, on):
             # Patched before (other switches, another resolution): start from the original, if it is this version.
             if not backup.is_file():
                 raise
-            raw_original = backup.read_bytes(); original = unity_bundle(raw_original)
+            raw_original = backup.read_bytes(); original = view(raw_original)
             if not (unchanged(exe) or ours(data, original)):
                 raise
             fresh = False

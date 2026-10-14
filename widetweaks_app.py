@@ -3,6 +3,7 @@ for their state), the selected game on the right with its on/off switch. On patc
 (backup kept), off puts the original back. Opened by `widetweaks` with no arguments, which is also what
 double-clicking WideTweaks.exe does."""
 import hashlib, json, os, pathlib, platform, threading, time, tkinter as tk, urllib.parse, urllib.request, webbrowser
+import tkinter.font as tkfont
 import widetweaks
 try:                                    # optional: shows the game's Steam artwork (Tk alone can't show JPEG)
     from PIL import Image, ImageDraw, ImageFont, ImageTk
@@ -25,6 +26,7 @@ SITE = 'https://imahappy.dev/widetweaks'
 KOFI = 'https://ko-fi.com/imahappy'
 SCALE = 1.25                            # the whole window 25% larger than Tk's default size
 WIDTH = round(760 * SCALE)              # narrowest window (px); height follows the content
+LIST_MAX = round(320 * SCALE)           # widest game list (px); longer names are cut short
 ICON = round(18 * SCALE)                # list icon size (px)
 STATES = {'missing': ('NOT INSTALLED', 'faint'), 'off': ('INSTALLED · ORIGINAL', 'muted'), 'on': ('PATCHED', 'ok'),
           'unsupported': ('UNSUPPORTED GAME VERSION', 'warn')}
@@ -86,6 +88,10 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title('WideTweaks')
+        try:                                    # window / taskbar icon (the .exe's own icon comes from icon.ico)
+            self.icon = tk.PhotoImage(file=str(widetweaks.HERE / 'icon.png')); root.iconphoto(True, self.icon)
+        except tk.TclError:
+            pass
         root.tk.call('tk', 'scaling', root.tk.call('tk', 'scaling') * SCALE)   # fonts and point sizes
         root.configure(bg=C['bg'])
 
@@ -128,12 +134,24 @@ class App:
             g = {'gid': gid, 'fix': fix, 'game': widetweaks.find_game(fix)}
             g['row'] = tk.Frame(self.list, bg=C['card'], cursor='hand2'); g['row'].pack(fill='x')
             g['icon'] = tk.Label(g['row'], image=self.blank, bg=C['card']); g['icon'].pack(side='left', padx=(12, 8), pady=6)
-            g['name'] = tk.Label(g['row'], text=fix['name'], font=(UI, 10), bg=C['card'], anchor='w')
-            g['name'].pack(side='left', fill='x', expand=True)
             g['dot'] = tk.Label(g['row'], text='●', font=(UI, 8), bg=C['card']); g['dot'].pack(side='right', padx=12)
+            g['name'] = tk.Label(g['row'], text=fix['name'], font=(UI, 10), bg=C['card'], anchor='w')    # after the dot: a
+            g['name'].pack(side='left', fill='x', expand=True)                                         # long name can't push it
             for w in (g['row'], g['icon'], g['dot'], g['name']):
                 w.bind('<Button-1>', lambda e, g=g: self.select(g))
             self.games.append(g)
+        # The list as wide as its longest game name, up to LIST_MAX (longer names end in "…"); the window grows by the same.
+        self.list.update_idletasks()
+        need = self.list.winfo_reqwidth()
+        width = max(left.cget('width'), min(need, LIST_MAX))
+        self.width = WIDTH + width - left.cget('width'); left.config(width=width)
+        room = width - (need - max((g['name'].winfo_reqwidth() for g in self.games), default=0))    # minus icon, dot and padding
+        font = tkfont.Font(font=(UI, 10))
+        for g in self.games:
+            name = g['fix']['name']
+            while font.measure(name) > room:
+                name = name[:-2] + '…'
+            g['name'].config(text=name)
 
         foot = tk.Frame(root, bg=C['bg']); foot.pack(side='bottom', fill='x', padx=24, pady=(12, 16), before=body)   # kept when the window is short
         tk.Label(foot, text='by ImaHappy', font=(UI, 9), fg=C['faint'], bg=C['bg']).pack(side='left')
@@ -165,7 +183,8 @@ class App:
         self.art = tk.Label(d, bg=C['bg'], height=0)            # the game's Steam header image, when loaded
         self.art.pack(fill='x')
         bar = tk.Frame(d, bg=C['card']); bar.pack(fill='x', padx=20, pady=(16, 2))
-        self.title = tk.Label(bar, font=(UI, 16, 'bold'), fg=C['text'], bg=C['card'], anchor='w')
+        self.title = tk.Label(bar, font=(UI, 16, 'bold'), fg=C['text'], bg=C['card'], anchor='w', justify='left',
+                              wraplength=round(330 * SCALE))     # a long name wraps beside "Play"
         self.title.pack(side='left', fill='x', expand=True)
         # "Play": starts the game through Steam, right of the title under the picture (installed games only).
         self.play = tk.Label(bar, text='▶  Play', font=(UI, 10, 'bold'), fg=C['bg'], bg=C['accent'], padx=14, pady=4,
@@ -346,8 +365,8 @@ class App:
         free above WIDTH: the picture follows the width, so the width can't follow the picture."""
         self.root.update_idletasks()                # let the layout settle first, or the height is stale
         h = self.root.winfo_reqheight()
-        if self.root.minsize() != (WIDTH, h) or self.root.winfo_height() < h:
-            self.root.minsize(WIDTH, h)
+        if self.root.minsize() != (self.width, h) or self.root.winfo_height() < h:
+            self.root.minsize(self.width, h)
             if self.root.winfo_height() < h:
                 self.root.geometry(f'{self.root.winfo_width()}x{h}')
 
@@ -420,7 +439,7 @@ class App:
 
 
 def run():
-    root = tk.Tk()
+    root = tk.Tk(className='WideTweaks')     # window class (Tk makes it "Widetweaks"): Linux taskbars find the icon by it, see widetweaks.desktop
     App(root)
     root.mainloop()
 
