@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """python3 test_widetweaks.py: the patch logic on fake executables (no game needed)."""
-import pathlib, struct, tempfile, zlib
+import os, pathlib, struct, tempfile, zlib
 import widetweaks
 
 fix = widetweaks.fixes()['sinking-star']
@@ -45,11 +45,11 @@ with tempfile.TemporaryDirectory() as d:
     game = pathlib.Path(d); exe = game / fix['exe']; exe.write_bytes(original)
     widetweaks.patch(fix, game, 3440, 1440)
     updated = b'\x01' * 100 + original[100:108] + b'\x01' * 100      # new version, unpatched, same size
-    exe.write_bytes(updated)
+    exe.write_bytes(updated); os.utime(exe, ns=(1, 1))                # an update has another time (Windows' clock can repeat one)
     widetweaks.restore(fix, game)                                       # already original: left alone,
     assert exe.read_bytes() == updated and widetweaks.status(fix, game) == 'off'   # never the old backup over it
     moved = b'\x01' * 208                                                  # same size, pattern gone
-    exe.write_bytes(moved)
+    exe.write_bytes(moved); os.utime(exe, ns=(2, 2))
     assert widetweaks.status(fix, game) == 'unsupported'
     try:
         widetweaks.patch(fix, game, 3440, 1440); raise AssertionError('should refuse')
