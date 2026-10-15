@@ -216,7 +216,7 @@ class App:
         link(foot, 'GitHub', REPO, C['muted'], (UI, 9), C['bg']).pack(side='right')
         link(foot, '♥ Support me on Ko-fi', KOFI, C['kofi'], (UI, 9), C['bg']).pack(side='right', padx=(0, 14))
 
-        self.selected, self.games, self.previews, self.width, self.fitting = None, [], {}, WIDTH, False
+        self.selected, self.games, self.previews, self.width, self.fitting, self.asked = None, [], {}, WIDTH, False, None
         self.build_start()
         self.build_detail()
         self.build_list(load_fixes(offline=True))       # at once from what's on disk; GitHub's list follows (below)
@@ -643,21 +643,22 @@ class App:
         self.fit_later()
 
     def fit_later(self):
-        """fit_window once the layout settles; asked many times in a row, it still runs once."""
+        """fit_window shortly, once the layout has settled; asked many times in a row, it still runs once."""
         if not self.fitting:
             self.fitting = True
-            self.root.after_idle(self.fit_window)
+            self.root.after(30, self.fit_window)
 
     def fit_window(self):
         """The window never shorter than what it shows: picture, every switch, Details (grows if it must). Width stays
-        free above WIDTH: the picture follows the width, so the width can't follow the picture."""
-        self.root.update_idletasks()                # let the layout settle first, or the height is stale
+        free above WIDTH: the picture follows the width, so the width can't follow the picture. Each height is asked of
+        the window manager once: one that keeps the window smaller (Hyprland with Wine does) must not start a loop."""
         self.fitting = False
         h = self.root.winfo_reqheight()
-        if self.root.minsize() != (self.width, h) or self.root.winfo_height() < h:
+        if self.root.minsize() != (self.width, h):
             self.root.minsize(self.width, h)
-            if self.root.winfo_height() < h:
-                self.root.geometry(f'{self.root.winfo_width()}x{h}')
+        if self.root.winfo_height() < h and self.asked != h:
+            self.asked = h
+            self.root.geometry(f'{max(self.root.winfo_width(), self.width)}x{h}')
 
     def show_details(self, open_):
         self.details_open = open_
