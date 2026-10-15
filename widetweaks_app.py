@@ -5,12 +5,11 @@ double-clicking WideTweaks.exe does.
 
 Only code and the fix files come with WideTweaks: the game list is refreshed from the fix files on GitHub (so new
 games arrive without a new WideTweaks), and pictures (Steam art, before/after shots) are downloaded when shown."""
-import hashlib, json, os, pathlib, platform, subprocess, sys, threading, time, tkinter as tk, urllib.parse, urllib.request, webbrowser
+import hashlib, io, json, os, pathlib, platform, re, subprocess, sys, threading, time, tkinter as tk, urllib.parse, urllib.request, webbrowser
 import tkinter.font as tkfont
 import widetweaks
 try:                                    # optional: shows the game's Steam artwork (Tk alone can't show JPEG)
     from PIL import Image, ImageDraw, ImageFont, ImageTk
-    import io
     try:
         FONT = ImageFont.load_default(12)
     except TypeError:                   # Pillow < 10.1
@@ -123,6 +122,39 @@ def link(parent, text, url, color, font, bg):
     label = tk.Label(parent, text=text, font=font, fg=color, bg=bg, cursor='hand2')
     label.bind('<Button-1>', lambda e: webbrowser.open(url() if callable(url) else url))
     return label
+
+
+def install_exe(data):
+    """The new WideTweaks.exe in place of the running one (Windows lets a running .exe be renamed, not overwritten);
+    the old one is left as .old and deleted at the next start."""
+    exe = pathlib.Path(sys.executable)
+    new, old = exe.with_name(exe.name + '.new'), exe.with_name(exe.name + '.old')
+    new.write_bytes(data)
+    old.unlink(missing_ok=True)
+    os.replace(exe, old)
+    try:
+        os.replace(new, exe)
+    except OSError:
+        os.replace(old, exe); new.unlink(missing_ok=True)
+        raise
+
+
+ZIP_FILES = re.compile(r'(widetweaks(_app)?\.py|icon\.png|widetweaks\.desktop|README\.md|LICENSE|fixes/[\w.-]+\.json)')
+
+
+def install_zip(data):
+    """The Linux zip's files over this folder's: only WideTweaks' own names (anything else in the zip is ignored), each
+    written aside first, then all swapped in."""
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        files = {n: z.read(n) for n in z.namelist() if ZIP_FILES.fullmatch(n)}
+    if 'widetweaks.py' not in files:
+        raise ValueError('not a WideTweaks zip')
+    for n, content in files.items():
+        (widetweaks.HERE / (n + '.new')).parent.mkdir(exist_ok=True)
+        (widetweaks.HERE / (n + '.new')).write_bytes(content)
+    for n in files:
+        os.replace(widetweaks.HERE / (n + '.new'), widetweaks.HERE / n)
 
 
 def listing(folder, offline=False):
@@ -300,47 +332,52 @@ class App:
         self.release = release
         tag = release['tag_name'].lstrip('v')
         self.banner_text.configure(text=f'WideTweaks {tag} is out (you have {widetweaks.VERSION}).', fg=C['text'])
-        self.banner_button.configure(text='Update now' if WIN and FROZEN else 'Download')
+        self.banner_button.configure(text='Update now' if CHECKOUT or not FROZEN or WIN else 'Download')
         self.banner.pack(fill='x', padx=24, pady=(0, 12), before=self.detail.master)
         if self.selected:
             self.build_rows(self.selected); self.refresh(self.selected, recheck=False)
         self.fit_later()
 
     def update_app(self):
-        """The user asked for the new version. WideTweaks.exe on Windows: download it, check its SHA-256 against the one
-        GitHub lists for the release, swap it in and restart; anywhere else: open the release page."""
+        """The user asked for the new version; nothing changes before they click. WideTweaks.exe (Windows) and the Linux
+        zip: download the release's file, check its SHA-256 against the one GitHub lists for it, put it in place and
+        restart. A git checkout: git pull (fast-forward only) and restart."""
         if not self.release:
             return webbrowser.open(RELEASES)
-        if not (WIN and FROZEN):
+        how = 'git' if CHECKOUT else 'exe' if WIN and FROZEN else 'zip' if not FROZEN else None
+        name = {'exe': 'WideTweaks.exe', 'zip': 'WideTweaks_Linux.zip'}.get(how)
+        asset = next((a for a in self.release.get('assets', []) if a['name'] == name), None)
+        if not how or (name and not (asset and str(asset.get('digest', '')).startswith('sha256:'))):
             return webbrowser.open(self.release['html_url'])
-        asset = next((a for a in self.release.get('assets', []) if a['name'] == 'WideTweaks.exe'), None)
-        if not asset or not str(asset.get('digest', '')).startswith('sha256:'):
-            return webbrowser.open(self.release['html_url'])
-        self.banner_text.configure(text='Downloading the new WideTweaks…')
+        self.banner_text.configure(text='Updating WideTweaks…')
         self.banner_button.pack_forget()
         def work():
-            exe = pathlib.Path(sys.executable)
-            new, old = exe.with_name(exe.name + '.new'), exe.with_name(exe.name + '.old')
             try:
-                data = urllib.request.urlopen(asset['browser_download_url'], timeout=120).read()
-                if hashlib.sha256(data).hexdigest() != asset['digest'].split(':', 1)[1].lower():
-                    raise ValueError("the download doesn't match the release's SHA-256: not installed")
-                new.write_bytes(data)
-                old.unlink(missing_ok=True)
-                os.replace(exe, old)            # Windows lets a running .exe be renamed, not overwritten
-                os.replace(new, exe)
-                # a fresh start for the new one (PyInstaller: don't reuse this process's unpacked files)
-                subprocess.Popen([str(exe)], env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}, close_fds=True)
-                self.root.after(0, self.root.destroy)
-            except (OSError, ValueError) as e:
-                new.unlink(missing_ok=True)
-                if old.exists() and not exe.exists():
-                    os.replace(old, exe)
+                if how == 'git':
+                    out = subprocess.run(['git', '-C', str(widetweaks.HERE), 'pull', '--ff-only'], capture_output=True,
+                                         text=True, timeout=120)
+                    if out.returncode:
+                        raise ValueError((out.stderr.strip() or 'git pull failed').splitlines()[-1])
+                else:
+                    data = urllib.request.urlopen(asset['browser_download_url'], timeout=120).read()
+                    if hashlib.sha256(data).hexdigest() != asset['digest'].split(':', 1)[1].lower():
+                        raise ValueError("the download doesn't match the release's SHA-256: not installed")
+                    (install_exe if how == 'exe' else install_zip)(data)
+                self.root.after(0, self.restart)
+            except (OSError, ValueError, subprocess.SubprocessError) as e:
                 self.root.after(0, lambda: (self.banner_text.configure(text=f'Update failed: {e}', fg=C['bad']),
                                             self.banner_button.configure(text='Download'),
                                             self.banner_button.pack(side='right', padx=8)))
                 self.release = {**self.release, 'assets': []}      # next click: the release page
         threading.Thread(target=work, daemon=True).start()
+
+    def restart(self):
+        """Start the updated WideTweaks, then close this one."""
+        if FROZEN:      # a fresh start for the new .exe (PyInstaller: don't reuse this process's unpacked files)
+            subprocess.Popen([sys.executable], env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}, close_fds=True)
+        else:
+            subprocess.Popen([sys.executable, str(widetweaks.HERE / 'widetweaks.py')], start_new_session=True)
+        self.root.destroy()
 
     def load_states(self):
         games = list(self.games)

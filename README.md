@@ -48,7 +48,7 @@ Needs the DX11 beta: in Steam, Darksiders II > Properties > Betas, enter the cod
 3. Pick the game and flip its switches on. Flip them off to undo.
 
 New games and fix updates show up in the app by themselves (it reads the fix files here on GitHub), and it tells you
-when a new WideTweaks is out: on Windows one click downloads it, checks its SHA-256 against the release and restarts.
+when a new WideTweaks is out: one click downloads it (the .exe, or the Linux zip), checks its SHA-256 against the release and restarts; a git checkout does `git pull`.
 Nothing is updated without you clicking.
 
 Your original game file is kept as a backup, so you can always switch back (or use Steam's "Verify integrity of
