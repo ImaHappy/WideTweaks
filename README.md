@@ -8,33 +8,10 @@
 
 | Game | Fix |
 |---|---|
-| [Darksiders II Deathinitive Edition](https://store.steampowered.com/app/388410/) | Minimap icons line up with the minimap (needs the DX11 beta branch "closed", code `DeathIstheRealDeal`)<details><summary>Before / after</summary><img src="docs/darksiders-2.jpg" alt="Darksiders II Deathinitive Edition at 3440x1440, original vs WideTweaks"></details> |
-| [DAVE THE DIVER](https://store.steampowered.com/app/1868140/) | Full width, ultrawide HUD, unlocked FPS<details><summary>Before / after</summary><img src="docs/dave-the-diver.jpg" alt="DAVE THE DIVER at 3440x1440, original vs WideTweaks"></details> |
-| [Order of the Sinking Star](https://store.steampowered.com/app/499170/) | Removes the black bars on 21:9 and 32:9<details><summary>Before / after</summary><img src="docs/sinking-star.jpg" alt="Order of the Sinking Star at 3440x1440, original vs WideTweaks"></details> |
-| [Sleeping Dogs: Definitive Edition](https://store.steampowered.com/app/307690/) | Full-width cutscenes and menus, HUD at the screen edges (minimap intact)<details><summary>Before / after</summary><img src="docs/sleeping-dogs.jpg" alt="Sleeping Dogs: Definitive Edition at 3440x1440, original vs WideTweaks"></details> |
-
-## What each switch does
-
-**Darksiders II Deathinitive Edition** ([how it works](docs/fixes/darksiders-2.md))
-
-Needs the DX11 beta: in Steam, Darksiders II > Properties > Betas, enter the code `DeathIstheRealDeal`, then pick the branch "closed" (not "publicbeta").
-
-- **Fix Minimap:** The player arrow and map markers sit on the minimap again, instead of drifting off to the right of it. The minimap stays where the game puts it.
-
-**DAVE THE DIVER** ([how it works](docs/fixes/dave-the-diver.md))
-
-- **Remove Black Bars:** The game runs at your screen's own resolution and fills its full width, instead of a 16:9 picture with decorative side panels.
-- **Ultrawide HUD:** The HUD, menus, popups and cutscene bars reach your screen edges instead of sitting in a 16:9 box; dialogue stays together in the middle, and the intro animation is zoomed to fill the width.
-- **Unlock FPS:** Removes the 60 FPS cap, so the game runs at your monitor's refresh rate.
-
-**Order of the Sinking Star** ([how it works](docs/fixes/sinking-star.md))
-
-- **Remove Black Bars:** The game fills your whole screen instead of leaving black bars at the sides.
-
-**Sleeping Dogs: Definitive Edition** ([how it works](docs/fixes/sleeping-dogs.md))
-
-- **Remove Black Bars:** Cutscenes and menus fill your whole screen instead of being boxed to 16:9 (gameplay already does).
-- **Ultrawide HUD:** Minimap, health, money and weapon move to your screen edges, and the big map's lists move to the sides; the minimap keeps its shape. The mission-complete screen stays centred on purpose. Tested up to 32:9.
+| [Darksiders II Deathinitive Edition](https://store.steampowered.com/app/388410/) | Minimap icons line up with the minimap (needs the DX11 beta branch "closed", code `DeathIstheRealDeal`)<br><a href="docs/fixes/darksiders-2.md">How it works</a><details><summary>Before / after</summary><img src="docs/darksiders-2.jpg" width="560" alt="Darksiders II Deathinitive Edition at 3440x1440, original vs WideTweaks"></details> |
+| [DAVE THE DIVER](https://store.steampowered.com/app/1868140/) | Full width, ultrawide HUD, unlocked FPS<br><a href="docs/fixes/dave-the-diver.md">How it works</a><details><summary>Before / after</summary><img src="docs/dave-the-diver.jpg" width="560" alt="DAVE THE DIVER at 3440x1440, original vs WideTweaks"></details> |
+| [Order of the Sinking Star](https://store.steampowered.com/app/499170/) | Removes the black bars on 21:9 and 32:9<br><a href="docs/fixes/sinking-star.md">How it works</a><details><summary>Before / after</summary><img src="docs/sinking-star.jpg" width="560" alt="Order of the Sinking Star at 3440x1440, original vs WideTweaks"></details> |
+| [Sleeping Dogs: Definitive Edition](https://store.steampowered.com/app/307690/) | Full-width cutscenes and menus, HUD at the screen edges (minimap intact)<br><a href="docs/fixes/sleeping-dogs.md">How it works</a><details><summary>Before / after</summary><img src="docs/sleeping-dogs.jpg" width="560" alt="Sleeping Dogs: Definitive Edition at 3440x1440, original vs WideTweaks"></details> |
 
 ## How to use
 
