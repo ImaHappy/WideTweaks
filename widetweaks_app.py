@@ -373,6 +373,7 @@ class App:
 
     def restart(self):
         """Start the updated WideTweaks, then close this one."""
+        remember(self.root)                         # the new one opens where this one is
         if FROZEN:      # a fresh start for the new .exe (PyInstaller: don't reuse this process's unpacked files)
             subprocess.Popen([sys.executable], env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}, close_fds=True)
         else:
@@ -772,9 +773,34 @@ class App:
             self.refresh(g, str(e).upper()[:160], C['bad'], name)
 
 
+PLACE = CACHE / 'window.json'           # where the window was last closed, so it opens there again
+
+
+def place(root):
+    """Put the window where it was last closed, if that spot is still on the screen."""
+    try:
+        x, y = json.loads(PLACE.read_text())
+    except (OSError, ValueError, TypeError):
+        return
+    if 0 <= x < root.winfo_screenwidth() - 100 and 0 <= y < root.winfo_screenheight() - 100:
+        root.geometry(f'+{x}+{y}')
+        root.after(300, lambda: root.geometry(f'+{x}+{y}'))    # again once shown: Hyprland ignores it before
+
+
+def remember(root):
+    """Save the window's spot (also called before an update restarts WideTweaks)."""
+    try:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        PLACE.write_text(json.dumps([root.winfo_x(), root.winfo_y()]))
+    except (OSError, tk.TclError):
+        pass
+
+
 def run():
     root = tk.Tk(className='WideTweaks')     # window class (Tk makes it "Widetweaks"): Linux taskbars find the icon by it, see widetweaks.desktop
+    place(root)
     App(root)
+    root.protocol('WM_DELETE_WINDOW', lambda: (remember(root), root.destroy()))
     root.mainloop()
 
 
