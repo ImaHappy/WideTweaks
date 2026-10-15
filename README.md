@@ -34,7 +34,7 @@ Pillow adds the game pictures, and `python-lz4` makes Unity games like Dave fast
 
 ## Support
 
-If a fix saved your ultrawide, [a coffee on Ko-fi](https://ko-fi.com/imahappy) keeps them coming.
+WideTweaks is free. If you want to support it: [Ko-fi](https://ko-fi.com/imahappy).
 
 ---
 
