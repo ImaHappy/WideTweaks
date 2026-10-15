@@ -16,9 +16,13 @@ jobs:
         with:
           python-version: '3.12'
       - run: python test_widetweaks.py
+      - name: tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python -c "import os, widetweaks as w; t = os.environ['GITHUB_REF_NAME']; assert t == 'v' + w.VERSION, f'tag {t} but VERSION {w.VERSION}'"
       - run: pip install pyinstaller pillow lz4
-      - run: pyinstaller --onefile --windowed --name WideTweaks --icon icon.ico --add-data "fixes;fixes" --add-data "icon.png;." widetweaks.py
-      - run: Compress-Archive -Path widetweaks.py, widetweaks_app.py, icon.png, widetweaks.desktop, fixes, README.md, LICENSE -DestinationPath WideTweaks_Linux.zip
+      - run: pyinstaller --onefile --windowed --name WideTweaks --icon icon.ico --add-data "fixes/*.json;fixes" --add-data "icon.png;." widetweaks.py
+      - name: Linux zip (code and fix files; pictures are downloaded when shown)
+        run: python -c "import glob, zipfile; z = zipfile.ZipFile('WideTweaks_Linux.zip', 'w', zipfile.ZIP_DEFLATED); [z.write(f) for f in ['widetweaks.py', 'widetweaks_app.py', 'icon.png', 'widetweaks.desktop', 'README.md', 'LICENSE'] + sorted(glob.glob('fixes/*.json'))]; z.close()"
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
         with:
           subject-path: |

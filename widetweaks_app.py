@@ -1,8 +1,11 @@
 """The WideTweaks window, two columns like Flawless Widescreen: the supported games on the left (with a dot
-for their state), the selected game on the right with its on/off switch. On patches the game for your resolution
+for their state), the selected game on the right with its on/off switches. On patches the game for your resolution
 (backup kept), off puts the original back. Opened by `widetweaks` with no arguments, which is also what
-double-clicking WideTweaks.exe does."""
-import hashlib, json, os, pathlib, platform, threading, time, tkinter as tk, urllib.parse, urllib.request, webbrowser
+double-clicking WideTweaks.exe does.
+
+Only code and the fix files come with WideTweaks: the game list is refreshed from the fix files on GitHub (so new
+games arrive without a new WideTweaks), and pictures (Steam art, before/after shots) are downloaded when shown."""
+import hashlib, json, os, pathlib, platform, subprocess, sys, threading, time, tkinter as tk, urllib.parse, urllib.request, webbrowser
 import tkinter.font as tkfont
 import widetweaks
 try:                                    # optional: shows the game's Steam artwork (Tk alone can't show JPEG)
@@ -21,7 +24,12 @@ MONO = 'Consolas' if WIN else 'JetBrains Mono'
 C = {'bg': '#0c0e11', 'card': '#14181d', 'pick': '#1b2128', 'line': '#232a31', 'text': '#e6edf3', 'muted': '#8b98a5',
      'faint': '#56636f', 'accent': '#4fc3d9', 'ok': '#6fcf97', 'warn': '#ffc23d', 'bad': '#e5484d', 'off': '#2b333b',
      'kofi': '#ff5e5b'}
-REPO = 'https://github.com/ImaHappy/WideTweaks'
+REPO = f'https://github.com/{widetweaks.REPO}'
+RELEASES = f'{REPO}/releases/latest'
+API = f'https://api.github.com/repos/{widetweaks.REPO}'
+RAW = f'https://raw.githubusercontent.com/{widetweaks.REPO}/main/'
+FROZEN = getattr(sys, 'frozen', False)  # WideTweaks.exe (PyInstaller), not the Python files
+CHECKOUT = (widetweaks.HERE / '.git').exists()   # a git checkout: its own fixes/ are the ones being worked on
 SITE = 'https://imahappy.dev/widetweaks'
 KOFI = 'https://ko-fi.com/imahappy'
 SCALE = 1.25                            # the whole window 25% larger than Tk's default size
@@ -57,15 +65,47 @@ class Switch(tk.Canvas):
         self.create_oval(x - r + 4, 4, x + r - 4, self.H - 4, fill=C['text'] if self.enabled else C['faint'], outline='')
 
 
+class Tip:
+    """A small popup with `text` beside a widget while the mouse is on it, drawn inside the window (a separate popup
+    window is placed at random by some Linux window managers)."""
+    def __init__(self, widget, text):
+        self.widget, self.text, self.popup = widget, text, None
+        widget.bind('<Enter>', lambda e: self.show())
+        widget.bind('<Leave>', lambda e: self.hide())
+        widget.bind('<Destroy>', lambda e: self.hide(), add='+')
+
+    def show(self):
+        if self.popup:
+            return
+        w = self.widget; root = w.winfo_toplevel()
+        self.popup = p = tk.Frame(root, bg=C['accent'])
+        tk.Label(p, text=self.text, font=(UI, 9), fg=C['text'], bg=C['bg'], justify='left', padx=10, pady=7,
+                 wraplength=round(280 * SCALE)).pack(padx=1, pady=1)
+        p.update_idletasks()
+        # Below the widget (above it if there's no room), never over it: covering it would end the hover and flicker.
+        x = w.winfo_rootx() - root.winfo_rootx() - 12
+        x = max(8, min(x, root.winfo_width() - p.winfo_reqwidth() - 8))
+        y = w.winfo_rooty() - root.winfo_rooty() + w.winfo_height() + 4
+        if y + p.winfo_reqheight() > root.winfo_height() - 8:
+            y = w.winfo_rooty() - root.winfo_rooty() - p.winfo_reqheight() - 4
+        p.place(x=x, y=y); p.lift()
+
+    def hide(self):
+        if self.popup:
+            self.popup.destroy(); self.popup = None
+
+
 CACHE = pathlib.Path(os.environ.get('LOCALAPPDATA', '~/.cache')).expanduser() / ('WideTweaks' if WIN else 'widetweaks')
 
 
-def download(url, max_age=None):
+def download(url, max_age=None, offline=False):
     """The URL's bytes, kept on disk so the next start needs no network; refetched when older than max_age seconds
-    (if the network fails, the old copy is used)."""
+    (if the network fails, the old copy is used). offline: only the copy on disk, however old (OSError if none)."""
     path = CACHE / hashlib.sha1(url.encode()).hexdigest()
-    if path.is_file() and (max_age is None or time.time() - path.stat().st_mtime < max_age):
+    if path.is_file() and (offline or max_age is None or time.time() - path.stat().st_mtime < max_age):
         return path.read_bytes()
+    if offline:
+        raise OSError(f'not downloaded yet: {url}')
     try:
         data = urllib.request.urlopen(url, timeout=10).read()
     except OSError:
@@ -79,9 +119,40 @@ def download(url, max_age=None):
 
 
 def link(parent, text, url, color, font, bg):
+    """A clickable label opening url (or url(), for a link that changes)."""
     label = tk.Label(parent, text=text, font=font, fg=color, bg=bg, cursor='hand2')
-    label.bind('<Button-1>', lambda e: webbrowser.open(url))
+    label.bind('<Button-1>', lambda e: webbrowser.open(url() if callable(url) else url))
     return label
+
+
+def listing(folder, offline=False):
+    """{file name: download URL} of a folder of the repo's main branch on GitHub (asked at most hourly). The URLs carry
+    the file's hash, so a file is downloaded again only when it changed."""
+    items = json.loads(download(f'{API}/contents/{folder}?ref=main', max_age=3600, offline=offline))
+    return {i['name']: f"{RAW}{folder}/{i['name']}?{i['sha']}" for i in items if i['type'] == 'file'}
+
+
+def load_fixes(offline=False):
+    """{id: fix}: each game's fix file from GitHub, else the copy that came with WideTweaks (no network, GitHub down).
+    A GitHub fix that needs a newer WideTweaks gives way to the bundled copy, if there is one; if not, it's kept and
+    its game shows "Update WideTweaks". A git checkout uses only its own fixes/ (the ones being worked on)."""
+    out = widetweaks.fixes()
+    if CHECKOUT:
+        return out
+    try:
+        files = listing('fixes', offline)
+    except (OSError, ValueError, KeyError, TypeError):
+        files = {}
+    for name, url in files.items():
+        gid = name.removesuffix('.json')
+        if name.endswith('.json'):
+            try:
+                fix = json.loads(download(url, offline=offline))
+            except (OSError, ValueError):
+                continue
+            if widetweaks.supported(fix) or gid not in out or not widetweaks.supported(out[gid]):
+                out[gid] = fix
+    return dict(sorted(out.items()))
 
 
 class App:
@@ -97,7 +168,9 @@ class App:
 
         # Header: name, tagline, links; then your resolution (the switches patch for whatever is here).
         head = tk.Frame(root, bg=C['bg']); head.pack(fill='x', padx=24, pady=(8, 0))
-        tk.Label(head, text='WideTweaks', font=(UI, 20, 'bold'), fg=C['text'], bg=C['bg']).pack(side='left')
+        name = tk.Label(head, text='WideTweaks', font=(UI, 20, 'bold'), fg=C['text'], bg=C['bg'], cursor='hand2')
+        name.pack(side='left'); name.bind('<Button-1>', lambda e: self.show_start())    # back to the start screen
+        tk.Label(head, text=widetweaks.VERSION, font=(UI, 9), fg=C['faint'], bg=C['bg']).pack(side='left', anchor='s', padx=6, pady=(0, 6))
         link(head, 'imahappy.dev', SITE, C['accent'], (UI, 10), C['bg']).pack(side='right', anchor='s', pady=(0, 4))
         sub = tk.Frame(root, bg=C['bg']); sub.pack(fill='x', padx=24, pady=(0, 16))
         tk.Label(sub, text="Happy's Ultrawide Fixes", font=(UI, 11), fg=C['muted'], bg=C['bg']).pack(side='left')
@@ -109,6 +182,15 @@ class App:
                  highlightcolor=C['accent']).pack(side='right', padx=10, ipady=3)
         tk.Label(sub, text='RESOLUTION', font=(MONO, 9), fg=C['faint'], bg=C['bg']).pack(side='right')
         self.res.trace_add('write', lambda *a: self.show_aspect()); self.show_aspect()
+        # "WideTweaks X is out": a strip under the header, shown when GitHub has a newer release (never updates by itself).
+        self.banner = tk.Frame(root, bg=C['pick'], highlightthickness=1, highlightbackground=C['accent'])
+        self.banner_text = tk.Label(self.banner, font=(UI, 10), fg=C['text'], bg=C['pick'], anchor='w')
+        self.banner_text.pack(side='left', padx=12, pady=6)
+        self.banner_button = tk.Label(self.banner, font=(UI, 10, 'bold'), fg=C['bg'], bg=C['accent'], padx=12, pady=2, cursor='hand2')
+        self.banner_button.pack(side='right', padx=8)
+        self.banner_button.bind('<Button-1>', lambda e: self.update_app())
+        link(self.banner, "What's new", lambda: self.release['html_url'], C['accent'], (UI, 9), C['pick']).pack(side='right', padx=8)
+        self.release = None
 
         # Two columns: games | the selected game.
         body = tk.Frame(root, bg=C['bg']); body.pack(fill='both', expand=True, padx=24)
@@ -123,28 +205,58 @@ class App:
         def update_hint(*a):
             hint.place(x=4, rely=.5, anchor='w') if not self.query.get() else hint.place_forget()
         self.query.trace_add('write', lambda *a: (update_hint(), self.filter())); update_hint()
+        self.left = left
         self.list = tk.Frame(left, bg=C['card']); self.list.pack(fill='both', expand=True)
         self.blank = tk.PhotoImage(width=ICON, height=ICON)     # keeps names aligned before (or without) icons
         self.detail = tk.Frame(body, bg=C['card'], highlightthickness=1, highlightbackground=C['line'])
         self.detail.pack(side='left', fill='both', expand=True, padx=(10, 0))
 
+        foot = tk.Frame(root, bg=C['bg']); foot.pack(side='bottom', fill='x', padx=24, pady=(12, 16), before=body)   # kept when the window is short
+        tk.Label(foot, text='by ImaHappy', font=(UI, 9), fg=C['faint'], bg=C['bg']).pack(side='left')
+        link(foot, 'GitHub', REPO, C['muted'], (UI, 9), C['bg']).pack(side='right')
+        link(foot, '♥ Support me on Ko-fi', KOFI, C['kofi'], (UI, 9), C['bg']).pack(side='right', padx=(0, 14))
+
+        self.selected, self.games, self.previews, self.width, self.fitting = None, [], {}, WIDTH, False
+        self.build_start()
+        self.build_detail()
+        self.build_list(load_fixes(offline=True))       # at once from what's on disk; GitHub's list follows (below)
+        self.show_start()
+        if FROZEN:                                      # left over by the last update (see update_app)
+            try: pathlib.Path(sys.executable + '.old').unlink(missing_ok=True)
+            except OSError: pass
+        # Once Tk runs (threads hand their results over with root.after): the list from GitHub, update check.
+        root.after(0, lambda: threading.Thread(target=self.fetch_online, daemon=True).start())
+
+    def build_list(self, fixes):
+        """The game list, one row per fix; built again when GitHub's fixes differ from the ones shown."""
+        selected = self.selected and self.selected['gid']
+        for w in self.list.winfo_children():
+            w.destroy()
         # shortcut: a plain column of rows, no scrolling; make it scrollable once there are ~15+ games.
+        old = {g['gid']: g for g in self.games}
         self.games = []
-        for gid, fix in widetweaks.fixes().items():
+        for gid, fix in fixes.items():
             g = {'gid': gid, 'fix': fix, 'game': widetweaks.find_game(fix)}
+            if gid in old and old[gid]['fix'] == fix:   # unchanged: keep what was loaded (states, art, icon)
+                g.update({k: v for k, v in old[gid].items() if k in ('states', 'state', 'assets', 'art_raw', 'icon_data', 'shots')})
             g['row'] = tk.Frame(self.list, bg=C['card'], cursor='hand2'); g['row'].pack(fill='x')
             g['icon'] = tk.Label(g['row'], image=self.blank, bg=C['card']); g['icon'].pack(side='left', padx=(12, 8), pady=6)
-            g['dot'] = tk.Label(g['row'], text='●', font=(UI, 8), bg=C['card']); g['dot'].pack(side='right', padx=12)
-            g['name'] = tk.Label(g['row'], text=fix['name'], font=(UI, 10), bg=C['card'], anchor='w')    # after the dot: a
-            g['name'].pack(side='left', fill='x', expand=True)                                         # long name can't push it
+            g['dot'] = tk.Label(g['row'], text='●', font=(UI, 8), bg=C['card'], fg=C['card']); g['dot'].pack(side='right', padx=12)
+            g['name'] = tk.Label(g['row'], text=fix['name'], font=(UI, 10), bg=C['card'], fg=C['muted'], anchor='w')   # after the dot:
+            g['name'].pack(side='left', fill='x', expand=True)                                                     # a long name can't push it
             for w in (g['row'], g['icon'], g['dot'], g['name']):
                 w.bind('<Button-1>', lambda e, g=g: self.select(g))
+            if 'icon_data' in g:
+                self.set_icon(g, g['icon_data'])
             self.games.append(g)
+        self.none = tk.Label(self.list, text='No match', font=(UI, 10), fg=C['faint'], bg=C['card'])
         # The list as wide as its longest game name, up to LIST_MAX (longer names end in "…"); the window grows by the same.
+        left, base = self.left, round(250 * SCALE)
+        left.config(width=base)
         self.list.update_idletasks()
         need = self.list.winfo_reqwidth()
-        width = max(left.cget('width'), min(need, LIST_MAX))
-        self.width = WIDTH + width - left.cget('width'); left.config(width=width)
+        width = max(base, min(need, LIST_MAX))
+        self.width = WIDTH + width - base; left.config(width=width)
         room = width - (need - max((g['name'].winfo_reqwidth() for g in self.games), default=0))    # minus icon, dot and padding
         font = tkfont.Font(font=(UI, 10))
         for g in self.games:
@@ -152,34 +264,146 @@ class App:
             while font.measure(name) > room:
                 name = name[:-2] + '…'
             g['name'].config(text=name)
+        self.filter()
+        for g in self.games:
+            if 'states' in g:
+                self.refresh(g, recheck=False)
+        self.selected = next((g for g in self.games if g['gid'] == selected), None)
+        self.select(self.selected) if self.selected else self.show_start()
+        threading.Thread(target=self.load_states, daemon=True).start()   # reading the games' files takes a moment (2 s for Dave)
+        threading.Thread(target=self.fetch_icons, daemon=True).start()
 
-        foot = tk.Frame(root, bg=C['bg']); foot.pack(side='bottom', fill='x', padx=24, pady=(12, 16), before=body)   # kept when the window is short
-        tk.Label(foot, text='by ImaHappy', font=(UI, 9), fg=C['faint'], bg=C['bg']).pack(side='left')
-        link(foot, 'GitHub', REPO, C['muted'], (UI, 9), C['bg']).pack(side='right')
-        link(foot, '♥ Support me on Ko-fi', KOFI, C['kofi'], (UI, 9), C['bg']).pack(side='right', padx=(0, 14))
+    def fetch_online(self):
+        """In the background: the fix files and before/after shots on GitHub, then whether a newer WideTweaks is out."""
+        fixes = load_fixes()
+        try:
+            previews = {} if CHECKOUT else listing('fixes/previews')
+        except (OSError, ValueError, KeyError, TypeError):
+            previews = {}
+        def show():
+            self.previews = previews
+            if [(g['gid'], g['fix']) for g in self.games] != list(fixes.items()):
+                self.build_list(fixes)
+            elif self.selected:
+                self.select(self.selected)          # Compare buttons for shots that are only on GitHub
+            else:
+                self.show_start()
+        self.root.after(0, show)
+        try:
+            release = json.loads(urllib.request.urlopen(f'{API}/releases/latest', timeout=10).read())
+            if widetweaks.version(release['tag_name']) > widetweaks.version(widetweaks.VERSION):
+                self.root.after(0, lambda: self.show_release(release))
+        except (OSError, ValueError, KeyError):
+            pass
 
-        self.none = tk.Label(self.list, text='No match', font=(UI, 10), fg=C['faint'], bg=C['card'])
-        self.selected = None
-        self.build_detail()
-        root.after(0, lambda: threading.Thread(target=self.fetch_icons, daemon=True).start())   # once Tk runs: threads call root.after
-        # Reading the games' files takes a moment (about 2 s for Dave): in the background, then pick the first game.
-        root.after(0, lambda: threading.Thread(target=self.load_states, daemon=True).start())
-        if self.games:          # shown at once (switches "checking"), so the window has its size from the start
-            root.after(0, lambda: self.select(self.games[0]))
+    def show_release(self, release):
+        self.release = release
+        tag = release['tag_name'].lstrip('v')
+        self.banner_text.configure(text=f'WideTweaks {tag} is out (you have {widetweaks.VERSION}).', fg=C['text'])
+        self.banner_button.configure(text='Update now' if WIN and FROZEN else 'Download')
+        self.banner.pack(fill='x', padx=24, pady=(0, 12), before=self.detail.master)
+        if self.selected:
+            self.build_rows(self.selected); self.refresh(self.selected, recheck=False)
+        self.fit_later()
+
+    def update_app(self):
+        """The user asked for the new version. WideTweaks.exe on Windows: download it, check its SHA-256 against the one
+        GitHub lists for the release, swap it in and restart; anywhere else: open the release page."""
+        if not self.release:
+            return webbrowser.open(RELEASES)
+        if not (WIN and FROZEN):
+            return webbrowser.open(self.release['html_url'])
+        asset = next((a for a in self.release.get('assets', []) if a['name'] == 'WideTweaks.exe'), None)
+        if not asset or not str(asset.get('digest', '')).startswith('sha256:'):
+            return webbrowser.open(self.release['html_url'])
+        self.banner_text.configure(text='Downloading the new WideTweaks…')
+        self.banner_button.pack_forget()
+        def work():
+            exe = pathlib.Path(sys.executable)
+            new, old = exe.with_name(exe.name + '.new'), exe.with_name(exe.name + '.old')
+            try:
+                data = urllib.request.urlopen(asset['browser_download_url'], timeout=120).read()
+                if hashlib.sha256(data).hexdigest() != asset['digest'].split(':', 1)[1].lower():
+                    raise ValueError("the download doesn't match the release's SHA-256: not installed")
+                new.write_bytes(data)
+                old.unlink(missing_ok=True)
+                os.replace(exe, old)            # Windows lets a running .exe be renamed, not overwritten
+                os.replace(new, exe)
+                # a fresh start for the new one (PyInstaller: don't reuse this process's unpacked files)
+                subprocess.Popen([str(exe)], env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}, close_fds=True)
+                self.root.after(0, self.root.destroy)
+            except (OSError, ValueError) as e:
+                new.unlink(missing_ok=True)
+                if old.exists() and not exe.exists():
+                    os.replace(old, exe)
+                self.root.after(0, lambda: (self.banner_text.configure(text=f'Update failed: {e}', fg=C['bad']),
+                                            self.banner_button.configure(text='Download'),
+                                            self.banner_button.pack(side='right', padx=8)))
+                self.release = {**self.release, 'assets': []}      # next click: the release page
+        threading.Thread(target=work, daemon=True).start()
 
     def load_states(self):
-        for g in self.games:
-            g['states'] = widetweaks.states(g['fix'], g['game'])
-        self.root.after(0, self.show_states)
+        games = list(self.games)
+        for g in games:
+            g['states'] = (widetweaks.states(g['fix'], g['game']) if widetweaks.supported(g['fix'])
+                           else {t: 'unsupported' for t in widetweaks.toggles(g['fix'])})
+        self.root.after(0, lambda: self.show_states(games))
 
-    def show_states(self):
+    def show_states(self, games):
+        for g in games:
+            if g in self.games:
+                self.refresh(g, recheck=False)
+        if not self.selected:
+            self.show_start()
+
+    def build_start(self):
+        """The start screen in the right column, before a game is picked: what WideTweaks is, how many of its games are
+        installed here, and where to begin."""
+        s = self.start = tk.Frame(self.detail, bg=C['card'])
+        inner = tk.Frame(s, bg=C['card']); inner.pack(expand=True, fill='both', padx=32, pady=32)
+        try:
+            self.logo = tk.PhotoImage(file=str(widetweaks.HERE / 'icon.png')).subsample(2)
+            tk.Label(inner, image=self.logo, bg=C['card']).pack(anchor='w', pady=(0, 12))
+        except tk.TclError:
+            pass
+        tk.Label(inner, text='Ultrawide fixes, one switch each', font=(UI, 16, 'bold'), fg=C['text'], bg=C['card'],
+                 anchor='w').pack(fill='x')
+        self.start_text = tk.Label(inner, font=(UI, 10), fg=C['muted'], bg=C['card'], anchor='w', justify='left',
+                                   wraplength=round(420 * SCALE))
+        self.start_text.pack(fill='x', pady=(8, 0))
+        self.start_installed = tk.Frame(inner, bg=C['card']); self.start_installed.pack(fill='x', pady=(16, 0))
+        tk.Label(inner, text='Every fix keeps the original files next to the game: switch it off and they are back.',
+                 font=(UI, 9), fg=C['faint'], bg=C['card'], anchor='w', justify='left',
+                 wraplength=round(420 * SCALE)).pack(fill='x', pady=(20, 0))
+
+    def show_start(self):
+        """The start screen (also what shows when none of the games is installed)."""
+        self.selected = None
         for g in self.games:
-            self.refresh(g, recheck=False)
-        if self.selected and self.selected['state'] == 'missing':     # the first game isn't installed: an installed one
-            self.select(next((g for g in self.games if g['state'] != 'missing'), self.selected))
+            for w in (g['row'], g['icon'], g['dot'], g['name']):
+                w.configure(bg=C['card'])
+            g['name'].configure(fg=C['muted'])
+        self.page.pack_forget(); self.compare(None)
+        self.start.pack(fill='both', expand=True)
+        installed = [g for g in self.games if g['game']]
+        n = len(self.games)
+        if installed:
+            text = (f'{n} games supported, {len(installed)} installed on this PC. Pick one on the left (or below) to see '
+                    'what its fix changes, then flip the switches you want.')
+        else:
+            text = (f"{n} games supported, none of them installed on this PC yet. Install one through Steam and it "
+                    'shows up here, ready to patch. (A copy outside Steam: the command line takes --path.)')
+        self.start_text.configure(text=text)
+        for w in self.start_installed.winfo_children():
+            w.destroy()
+        for g in installed:
+            row = tk.Label(self.start_installed, text=f"→  {g['fix']['name']}", font=(UI, 10), fg=C['accent'],
+                           bg=C['card'], anchor='w', cursor='hand2')
+            row.pack(fill='x', pady=1); row.bind('<Button-1>', lambda e, g=g: self.select(g))
+        self.fit_later()
 
     def build_detail(self):
-        d = self.detail
+        d = self.page = tk.Frame(self.detail, bg=C['card'])
         self.art = tk.Label(d, bg=C['bg'], height=0)            # the game's Steam header image, when loaded
         self.art.pack(fill='x')
         bar = tk.Frame(d, bg=C['card']); bar.pack(fill='x', padx=20, pady=(16, 2))
@@ -192,18 +416,38 @@ class App:
         self.play.bind('<Button-1>', lambda e: webbrowser.open(f"steam://rungameid/{self.selected['fix']['steam_appid']}"))
         self.summary = tk.Label(d, font=(UI, 10), fg=C['muted'], bg=C['card'], anchor='w', justify='left', wraplength=round(420 * SCALE))
         self.summary.pack(fill='x', padx=20)
-        # The switch with its label and state beside it, on a slightly raised strip.
-        # One switch strip per toggle of the game (built when it's picked); "Compare" sits on the first.
+        # A step to do in Steam first (e.g. switch to a beta branch), with a button copying its code; when the fix has one.
+        self.setup = tk.Frame(d, bg=C['pick'], highlightthickness=1, highlightbackground=C['warn'])
+        self.setup_text = tk.Label(self.setup, font=(UI, 9), fg=C['text'], bg=C['pick'], anchor='w', justify='left',
+                                   wraplength=round(320 * SCALE))
+        self.setup_text.pack(side='left', fill='x', expand=True, padx=(12, 8), pady=8)
+        self.setup_copy = tk.Label(self.setup, font=(MONO, 9), fg=C['text'], bg=C['card'], padx=10, pady=4, cursor='hand2',
+                                   highlightthickness=1, highlightbackground=C['line'])
+        self.setup_copy.pack(side='right', padx=(0, 12))
+        self.setup_copy.bind('<Button-1>', lambda e: self.copy_setup())
+        # One strip per switch of the game (built when it's picked): switch, name, what it does, state, "Compare".
         self.rows = tk.Frame(d, bg=C['card']); self.rows.pack(fill='x', padx=20, pady=(18, 0))
         self.switches, self.compare_buttons, self.comparing = {}, {}, None
         self.detail.bind('<Configure>', lambda e: self.fit_art())
         self.art.bind('<Motion>', lambda e: self.comparing and self.draw_compare(e.y))
-        # Details (how the fix works, where the game is), folded away until clicked.
+        # Details (tested with, where the game is, how the fix works), folded away until clicked.
         self.more = tk.Label(d, text='Details ▸', font=(UI, 9), fg=C['faint'], bg=C['card'], anchor='w', cursor='hand2')
         self.more.pack(fill='x', padx=20, pady=(12, 16))
         self.more.bind('<Button-1>', lambda e: self.show_details(not self.details_open))
-        self.details = tk.Label(d, font=(UI, 9), fg=C['muted'], bg=C['card'], anchor='w', justify='left', wraplength=round(420 * SCALE))
+        self.details = tk.Frame(d, bg=C['card'])
+        self.details_text = tk.Label(self.details, font=(UI, 9), fg=C['muted'], bg=C['card'], anchor='w', justify='left',
+                                     wraplength=round(420 * SCALE))
+        self.details_text.pack(fill='x')
+        link(self.details, 'How the fix works (GitHub) ↗', lambda: f"{REPO}/blob/main/docs/fixes/{self.selected['gid']}.md",
+             C['accent'], (UI, 9), C['card']).pack(anchor='w', pady=(6, 0))
         self.details_open = False
+
+    def copy_setup(self):
+        """The setup step's code to the clipboard; the button says so for a moment."""
+        self.root.clipboard_clear(); self.root.clipboard_append(self.selected['fix']['setup']['copy'])
+        self.setup_copy.configure(text=f"{self.selected['fix']['setup']['copy']}   ✓ Copied", fg=C['ok'])
+        self.root.after(1500, lambda: self.selected and 'setup' in self.selected['fix'] and
+                        self.setup_copy.configure(text=f"{self.selected['fix']['setup']['copy']}   ⧉ Copy", fg=C['text']))
 
     def show_art(self, g):
         """The game's Steam header image across the top of the right column, fetched once in the background."""
@@ -222,44 +466,77 @@ class App:
         threading.Thread(target=fetch, daemon=True).start()
 
     def load_previews(self, g):
-        """fixes/previews/<id>-<switch>-before.jpg and -after.jpg per switch (the first switch may drop "<switch>-");
-        a switch with both gets a Compare button."""
-        if 'previews' not in g:
-            g['previews'] = {}
-            for i, name in enumerate(widetweaks.toggles(g['fix'])):
-                for stem in [f"{g['gid']}-{name.lower().replace(' ', '-')}"] + ([g['gid']] if i == 0 else []):
-                    paths = [widetweaks.FIXES / 'previews' / f'{stem}-{n}.jpg' for n in ('before', 'after')]
-                    if Image and all(p.is_file() for p in paths):
-                        g['previews'][name] = [Image.open(p).convert('RGB') for p in paths]
-                        break
+        """Which switches have before/after shots, fixes/previews/<id>-<switch>-before.jpg and -after.jpg (the first
+        switch may drop "<switch>-"): in the folder next to WideTweaks (a checkout), else on GitHub. A switch with both
+        gets a Compare button; the shots themselves are downloaded when it's clicked."""
+        g['previews'] = {}
+        local = widetweaks.FIXES / 'previews'
+        for i, name in enumerate(widetweaks.toggles(g['fix'])):
+            for stem in [f"{g['gid']}-{name.lower().replace(' ', '-')}"] + ([g['gid']] if i == 0 else []):
+                files = [f'{stem}-{n}.jpg' for n in ('before', 'after')]
+                if Image and all((local / f).is_file() for f in files):
+                    g['previews'][name] = [local / f for f in files]; break
+                if Image and all(f in self.previews for f in files):
+                    g['previews'][name] = [self.previews[f] for f in files]; break
         self.compare(None)
+
+    def shots(self, g, name, then):
+        """The before/after pictures of switch `name` (opened or downloaded in the background), then then()."""
+        g.setdefault('shots', {})
+        if name in g['shots']:
+            return then()
+        self.compare_buttons[name].configure(text='…  Loading')
+        def fetch():
+            try:
+                g['shots'][name] = [Image.open(src if isinstance(src, pathlib.Path) else io.BytesIO(download(src))).convert('RGB')
+                                    for src in g['previews'][name]]
+                self.root.after(0, lambda: g is self.selected and then())
+            except (OSError, ValueError):
+                self.root.after(0, lambda: g is self.selected and name in self.compare_buttons and
+                                self.compare_buttons[name].configure(text='✕  No connection'))
+        threading.Thread(target=fetch, daemon=True).start()
 
     def build_rows(self, g):
         """A strip per switch: the switch, its name and state; clicking anywhere on the strip flips it."""
         for w in self.rows.winfo_children():
             w.destroy()
         self.switches, self.compare_buttons = {}, {}
+        if not widetweaks.supported(g['fix']):     # a fix from GitHub that uses what this WideTweaks doesn't have yet
+            row = tk.Frame(self.rows, bg=C['pick'], highlightthickness=1, highlightbackground=C['warn']); row.pack(fill='x')
+            tk.Label(row, text=f"This fix needs WideTweaks {g['fix']['requires']} or newer (you have {widetweaks.VERSION}).",
+                     font=(UI, 10), fg=C['text'], bg=C['pick'], anchor='w', justify='left',
+                     wraplength=round(300 * SCALE)).pack(side='left', fill='x', expand=True, padx=14, pady=10)
+            button = tk.Label(row, text='Update WideTweaks', font=(UI, 10, 'bold'), fg=C['bg'], bg=C['accent'], padx=12,
+                              pady=3, cursor='hand2')
+            button.pack(side='right', padx=12); button.bind('<Button-1>', lambda e: self.update_app())
+            return
         for i, name in enumerate(widetweaks.toggles(g['fix'])):
             row = tk.Frame(self.rows, bg=C['pick'], highlightthickness=1, highlightbackground=C['line'])
             row.pack(fill='x', pady=(6 if i else 0, 0))
             switch = Switch(row, lambda on, n=name: self.toggle(self.selected, n, on), C['pick'])
             switch.pack(side='left', padx=(14, 12), pady=10)
             text = tk.Frame(row, bg=C['pick']); text.pack(side='left', fill='x', expand=True)
-            label = tk.Label(text, text=name, font=(UI, 11, 'bold'), fg=C['text'], bg=C['pick'], anchor='w'); label.pack(fill='x')
-            state = tk.Label(text, font=(MONO, 8), bg=C['pick'], anchor='w', justify='left', wraplength=round(380 * SCALE)); state.pack(fill='x')
-            for w in (row, text, label, state):
+            top = tk.Frame(text, bg=C['pick']); top.pack(fill='x')
+            label = tk.Label(top, text=name, font=(UI, 11, 'bold'), fg=C['text'], bg=C['pick'], anchor='w'); label.pack(side='left')
+            about = widetweaks.switch_text(g['fix'], name)
+            if about:                           # "ⓘ": what the switch changes, in plain words, shown while hovered
+                info = tk.Label(top, text='ⓘ', font=(UI, 11), fg=C['faint'], bg=C['pick'], cursor='question_arrow')
+                info.pack(side='left', padx=(6, 0)); Tip(info, about)
+            state = tk.Label(text, font=(MONO, 8), bg=C['pick'], anchor='w', justify='left', wraplength=round(330 * SCALE)); state.pack(fill='x')
+            for w in (row, text, top, label, state):
                 w.configure(cursor='hand2'); w.bind('<Button-1>', lambda e, s=switch: s.event_generate('<Button-1>'))
             self.switches[name] = (switch, state)
             if name in g.get('previews', {}):   # "Compare": the picture on top becomes original (above) vs fixed (below)
                 button = tk.Label(row, text='◐  Compare', font=(UI, 9), fg=C['accent'], bg=C['card'], cursor='hand2',
                                   padx=10, pady=3, highlightthickness=1, highlightbackground=C['line'])
-                button.bind('<Button-1>', lambda e, n=name: self.compare(None if self.comparing == n else n))
+                button.bind('<Button-1>', lambda e, n=name: self.compare(None) if self.comparing == n else
+                            self.shots(self.selected, n, lambda: self.compare(n)))
                 button.pack(side='right', padx=(0, 12))
                 self.compare_buttons[name] = button
 
     def compare(self, name):
         """Show the comparison of switch `name` in the picture area (None: the game's picture again)."""
-        self.comparing = name if self.selected and name in self.selected.get('previews', {}) else None
+        self.comparing = name if self.selected and name in self.selected.get('shots', {}) else None
         for n, button in self.compare_buttons.items():
             button.configure(fg=C['bg'] if n == self.comparing else C['accent'], bg=C['accent'] if n == self.comparing else C['card'],
                              text='✕  Close' if n == self.comparing else '◐  Compare')
@@ -272,7 +549,7 @@ class App:
 
     def draw_compare(self, y):
         """Original above y, fixed below it (so both sides' bars show at once), with a divider and labels."""
-        before, after = self.selected['previews'][self.comparing]
+        before, after = self.selected['shots'][self.comparing]
         w = max(1, self.detail.winfo_width() - 2)
         if self.selected.get('compare_size') != (self.comparing, w):    # scaled to the column once, reused while moving
             self.selected['compare_size'] = (self.comparing, w)
@@ -316,7 +593,9 @@ class App:
         """The small Steam icon (32 px) next to each game in the list, in the background."""
         if not Image:
             return
-        for g in self.games:
+        for g in list(self.games):
+            if 'icon_data' in g:
+                continue
             try:
                 a = self.assets(g)
                 data = download(f"https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/{g['fix']['steam_appid']}/{a['community_icon']}.jpg")
@@ -325,6 +604,9 @@ class App:
             self.root.after(0, lambda g=g, data=data: self.set_icon(g, data))
 
     def set_icon(self, g, data):
+        g['icon_data'] = data
+        if g not in self.games:                     # the list was built again meanwhile
+            return
         g['icon_image'] = ImageTk.PhotoImage(Image.open(io.BytesIO(data)).resize((ICON, ICON), Image.LANCZOS))
         g['icon'].configure(image=g['icon_image'])
 
@@ -349,7 +631,7 @@ class App:
         """The selected game's picture at the right column's current width (again whenever the window resizes)."""
         g, w = self.selected, self.detail.winfo_width() - 2
         if not g or 'art_raw' not in g or w < 50:   # not laid out yet: the <Configure> that follows draws it
-            self.root.after_idle(self.fit_window)
+            self.fit_later()
             return
         if g.get('art_width') != w:
             im = g['art_raw']
@@ -358,12 +640,19 @@ class App:
             self.draw_compare(None)
         else:
             self.art.configure(image=g['art'])
-        self.root.after_idle(self.fit_window)
+        self.fit_later()
+
+    def fit_later(self):
+        """fit_window once the layout settles; asked many times in a row, it still runs once."""
+        if not self.fitting:
+            self.fitting = True
+            self.root.after_idle(self.fit_window)
 
     def fit_window(self):
         """The window never shorter than what it shows: picture, every switch, Details (grows if it must). Width stays
         free above WIDTH: the picture follows the width, so the width can't follow the picture."""
         self.root.update_idletasks()                # let the layout settle first, or the height is stale
+        self.fitting = False
         h = self.root.winfo_reqheight()
         if self.root.minsize() != (self.width, h) or self.root.winfo_height() < h:
             self.root.minsize(self.width, h)
@@ -373,7 +662,7 @@ class App:
     def show_details(self, open_):
         self.details_open = open_
         self.more.configure(text='Details ▾' if open_ else 'Details ▸')
-        self.root.after_idle(self.fit_window)
+        self.fit_later()
         if open_:
             self.details.pack(fill='x', padx=20, pady=(0, 16), after=self.more)
         else:
@@ -389,6 +678,7 @@ class App:
 
     def select(self, g):
         self.selected = g
+        self.start.pack_forget(); self.page.pack(fill='both', expand=True)
         self.play.pack(side='right') if g['game'] else self.play.pack_forget()
         for o in self.games:
             bg = C['pick'] if o is g else C['card']
@@ -399,12 +689,18 @@ class App:
         self.title.configure(text=f['name'])
         self.summary.configure(text=f['summary'])
         where = str(g['game'] / f['exe']) if g['game'] else f"Steam app {f['steam_appid']}, not found in your Steam libraries"
-        self.details.configure(text=f"{f.get('notes', '')}\n\n{where}".strip())
+        self.details_text.configure(text=f"Tested: {f['tested']}\nNeeds WideTweaks {f.get('requires', '0.1.0')} or newer\n{where}")
+        if 'setup' in f:                            # a step in Steam first, e.g. a beta branch and its code
+            self.setup_text.configure(text=f['setup']['text'])
+            self.setup_copy.configure(text=f"{f['setup']['copy']}   ⧉ Copy", fg=C['text'])
+            self.setup.pack(fill='x', padx=20, pady=(12, 0), before=self.rows)
+        else:
+            self.setup.pack_forget()
         self.show_art(g)
         self.load_previews(g)
         self.build_rows(g)
         self.refresh(g, recheck=False)
-        self.root.after_idle(self.fit_window)
+        self.fit_later()
 
     def refresh(self, g, message=None, color=None, which=None, recheck=True):
         """Show the game's switches; recheck reads its files again (at start and after a change, not on every click)."""
@@ -423,7 +719,7 @@ class App:
                 own = message and which in (name, None)
                 label.configure(text=message if own else text, fg=(color or C[tone]) if own else C[tone])
                 switch.set(states[name] == 'on', enabled=states[name] in ('on', 'off'))
-            self.root.after_idle(self.fit_window)
+            self.fit_later()
 
     def toggle(self, g, name, on):
         """Flip one switch: the game's files are rebuilt from the originals with the switches now on."""

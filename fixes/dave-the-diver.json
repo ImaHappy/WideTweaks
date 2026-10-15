@@ -4,8 +4,13 @@
   "exe": "GameAssembly.dll",
   "summary": "Your screen's full resolution, 21:9 and 32:9 included, instead of 16:9 with side panels.",
   "toggle": "Remove Black Bars",
+  "switches": {
+    "Remove Black Bars": "The game runs at your screen's own resolution and fills its full width, instead of a 16:9 picture with decorative side panels.",
+    "Ultrawide HUD": "The HUD, menus, popups and cutscene bars reach your screen edges instead of sitting in a 16:9 box; dialogue stays together in the middle, and the intro animation is zoomed to fill the width.",
+    "Unlock FPS": "Removes the 60 FPS cap, so the game runs at your monitor's refresh rate."
+  },
   "tested": "3440x1440 (Steam, build of October 2026)",
-  "notes": "The game only offers 16:9 resolutions (IsTargetRatio) and defaults to the largest 16:9 size (GetBestResolution). Its view setup (CoUpdateResolution) divides the screen shape by 16:9 and, when wider, narrows the camera and shows side-art panels; making that ratio 1 keeps the full width and hides the panels, as the old BepInEx mod did at runtime.",
+  "requires": "0.2.0",
   "patches": [
     {
       "description": "resolution list: accept every aspect ratio (IsTargetRatio returns true)",

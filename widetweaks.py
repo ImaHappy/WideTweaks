@@ -18,7 +18,9 @@ try:
 except ImportError:
     lz4 = None
 
-TITLE = "WideTweaks · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
+VERSION = '0.5.0'                 # a release's tag must be v + this (the release workflow checks)
+TITLE = f"WideTweaks {VERSION} · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
+REPO = 'ImaHappy/WideTweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
 FIXES = HERE / 'fixes'
 BACKUP = '.widetweaks-backup'
@@ -27,6 +29,21 @@ BACKUP = '.widetweaks-backup'
 def fixes():
     """{id: fix definition} from fixes/*.json (id = file name)."""
     return {p.stem: json.loads(p.read_text(encoding='utf-8')) for p in sorted(FIXES.glob('*.json'))}
+
+
+def version(text):
+    """'0.4.0' -> (0, 4, 0), for comparing; 'v0.4.0' too."""
+    return tuple(int(n) for n in re.findall(r'\d+', text)[:3])
+
+
+def supported(fix):
+    """True if this WideTweaks is new enough for the fix ("requires": the lowest version that has what it uses)."""
+    return version(fix.get('requires', '0')) <= version(VERSION)
+
+
+def switch_text(fix, name):
+    """The plain-language line of a switch: what it changes on screen."""
+    return fix.get('switches', {}).get(name, '')
 
 
 def steam_libraries():
@@ -559,6 +576,7 @@ def parse_resolution(text):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='widetweaks', description=TITLE)
+    ap.add_argument('--version', action='version', version=VERSION)
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list', help='supported games')
     for name in ('patch', 'restore'):
@@ -576,8 +594,12 @@ def main(argv=None):
     if a.cmd == 'list':
         for gid, f in all_fixes.items():
             print(f"{gid:24} {f['name']}  (Steam {f['steam_appid']}) - {f['summary']}")
+            for name in toggles(f):
+                print(f"{'':24}   {name}: {switch_text(f, name)}")
         return
     fix = all_fixes.get(a.game) or ap.error(f'unknown game {a.game!r}; see "widetweaks list"')
+    if not supported(fix):
+        raise SystemExit(f"This fix needs WideTweaks {fix['requires']} or newer (this is {VERSION}): https://github.com/{REPO}/releases/latest")
     game = a.path or find_game(fix) or ap.error(f"{fix['name']} not found in your Steam libraries; pass --path")
     if a.cmd == 'restore':
         try:

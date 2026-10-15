@@ -1,0 +1,24 @@
+{
+  "name": "Darksiders II Deathinitive Edition",
+  "steam_appid": 388410,
+  "exe": "Darksiders2.exe",
+  "summary": "Minimap icons line up with the minimap on 21:9 and 32:9 (DX11 beta branch).",
+  "setup": {
+    "text": "Needs the DX11 beta: in Steam, Darksiders II > Properties > Betas, enter this code, then pick the branch \"closed\" (not \"publicbeta\").",
+    "copy": "DeathIstheRealDeal"
+  },
+  "toggle": "Fix Minimap",
+  "switches": {
+    "Fix Minimap": "The player arrow and map markers sit on the minimap again, instead of drifting off to the right of it. The minimap stays where the game puts it."
+  },
+  "tested": "3440x1440 (Steam, DX11 beta branch, build 17701647, October 2026)",
+  "requires": "0.2.0",
+  "patches": [
+    {
+      "description": "minimap icon layer: same fit as the HUD (min of width/1280, height/720), centred",
+      "pattern": "F3 0F 10 4C 24 38 0F 28 D1 0F 57 0D ?? ?? ?? ?? F3 0F 5E 15 ?? ?? ?? ?? F3 0F 5E 0D ?? ?? ?? ?? 0F 28 C2 F3 0F 59 83 A4 01 00 00 F3 0F 11 8B A0 01 00 00 0F 28 CA F3 0F 11 83 C4 01 00 00 0F 28 C2 F3 0F 59 83 AC 01 00 00 F3 0F 59 8B A8 01 00 00 F3 0F 59 15 ?? ?? ?? ?? F3 0F 11 44 24 34 F3 0F 10 44 24 3C F3 0F 5C C2 F3 0F 11 4C 24 30 48 8B 44 24 30 48 89 83 C8 01 00 00 F3 0F 59 05 ?? ?? ?? ?? F3 0F 58 83 CC 01 00 00 F3 0F 11 83 CC 01 00 00",
+      "offset": 0,
+      "value": "bytes:F3 0F 7E 44 24 38 48 B8 00 00 A0 44 00 00 34 44 66 48 0F 6E E8 0F 28 D0 0F 5E D5 0F 28 CA 0F C6 C9 E5 F3 0F 5D D1 0F C6 D2 00 0F 57 C9 F3 0F 5C CA F3 0F 11 8B A0 01 00 00 0F 28 CA F3 0F 59 8B A4 01 00 00 F3 0F 11 8B C4 01 00 00 F2 0F 10 8B A8 01 00 00 0F 59 CA 0F 59 EA 0F 5C C5 B8 00 00 00 3F 66 0F 6E D8 0F C6 DB 00 0F 59 C3 0F 58 C8 0F 13 8B C8 01 00 00 EB 1A CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC"
+    }
+  ]
+}

@@ -109,13 +109,23 @@ with tempfile.TemporaryDirectory() as d:
     widetweaks.setup(two, game, 16, 9, set())
     assert (game / 'g.exe').read_bytes() == start and widetweaks.status(two, game) == 'off'
 
-# Every fix file has what the patcher needs.
+# Every fix file has what the patcher and the app need: a plain line per switch, the lowest WideTweaks it works with
+# (no newer than this one), and its "how it works" page in docs/fixes/.
+here = pathlib.Path(widetweaks.__file__).parent
 for gid, f in widetweaks.fixes().items():
-    assert {'name', 'steam_appid', 'exe', 'summary', 'toggle', 'tested', 'patches'} <= f.keys(), gid
+    assert {'name', 'steam_appid', 'exe', 'summary', 'toggle', 'switches', 'tested', 'requires', 'patches'} <= f.keys(), gid
+    assert set(f['switches']) == set(widetweaks.toggles(f)) and all(f['switches'].values()), gid
+    assert widetweaks.supported(f) and len(widetweaks.version(f['requires'])) == 3, gid
+    assert 'setup' not in f or {'text', 'copy'} == f['setup'].keys(), gid
+    assert (here / 'docs' / 'fixes' / f'{gid}.md').is_file(), gid
     for p in f['patches']:
         assert ('value' in p) != ('layout' in p), (gid, p['description'])
         if 'value' in p: widetweaks.value(p['value'], 16, 9)
         bytes.fromhex(p['pattern'].replace('??', '00'))
+
+# Versions compare as numbers; a fix needing a newer WideTweaks isn't supported.
+assert widetweaks.version('v0.10.0') > widetweaks.version('0.9.1') and widetweaks.version('0.4.0') == (0, 4, 0)
+assert not widetweaks.supported({'requires': '99.0.0'}) and widetweaks.supported({})
 
 # Values for a centred 1920x1080 UI: at 3440x1440 the 16:9 edge is 330 units from the screen edge.
 assert struct.unpack('<f', widetweaks.value('float:left:255', 3440, 1440))[0] == -75 and struct.unpack('<f', widetweaks.value('float:left:255', 1920, 1080))[0] == 255
