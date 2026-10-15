@@ -18,7 +18,7 @@ try:
 except ImportError:
     lz4 = None
 
-VERSION = '0.5.1'                 # a release's tag must be v + this (the release workflow checks)
+VERSION = '0.5.2'                 # a release's tag must be v + this (the release workflow checks)
 TITLE = f"WideTweaks {VERSION} · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
 REPO = 'ImaHappy/WideTweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
@@ -120,18 +120,25 @@ def value(kind, width, height):
 def spots(data, patches):
     """[(position, patch)]: where each patch writes. Each pattern ("AB AA ?? 40", ?? = any byte) must occur exactly
     once, and the value must change at least one fixed byte of it (else the patched file would still match, and
-    look original). Raises ValueError otherwise."""
+    look original). A patch with "variants" (one per game build, each its own pattern / offset / value) uses the one
+    whose pattern is in the file, so each build is detected by itself. Raises ValueError otherwise."""
     out = []
     for p in patches:
-        tokens, at = p['pattern'].split(), p.get('offset', 0)
-        v = value(p['value'], 21, 9) if 'value' in p else b''       # checked at an ultrawide shape; a layout has no value
-        if v and all(t == '??' or bytes.fromhex(t)[0] == b for t, b in zip(tokens[at:at + len(v)], v)):
-            raise ValueError(f"{p['description']}: the value changes no fixed byte of the pattern")
-        rx = re.compile(b''.join(b'.' if h == '??' else re.escape(bytes.fromhex(h)) for h in tokens), re.S)
-        hits = [m.start() for m in rx.finditer(data)]
-        if len(hits) != 1:
-            raise ValueError(f"{p['description']}: pattern found {len(hits)} times (expected once): unsupported game version")
-        out.append((hits[0] + at, p))
+        found = []
+        for alt in p.get('variants', [{}]):
+            q = {**p, **alt}
+            tokens, at = q['pattern'].split(), q.get('offset', 0)
+            v = value(q['value'], 21, 9) if 'value' in q else b''       # checked at an ultrawide shape; a layout has no value
+            if v and all(t == '??' or bytes.fromhex(t)[0] == b for t, b in zip(tokens[at:at + len(v)], v)):
+                raise ValueError(f"{q['description']}: the value changes no fixed byte of the pattern")
+            rx = re.compile(b''.join(b'.' if h == '??' else re.escape(bytes.fromhex(h)) for h in tokens), re.S)
+            hits = [m.start() for m in rx.finditer(data)]
+            if len(hits) > 1:
+                raise ValueError(f"{q['description']}: pattern found {len(hits)} times (expected once)")
+            found += [(hits[0] + at, q)] if hits else []
+        if len(found) != 1:
+            raise ValueError(f"{p['description']}: pattern not found: unsupported game version")
+        out.append(found[0])
     return out
 
 

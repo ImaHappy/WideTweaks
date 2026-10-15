@@ -47,6 +47,9 @@ Add `fixes/<id>.json`:
   uncompressed.
 - `pattern`: hex bytes, `??` for any byte. It must occur exactly once in the file, and the value must change at least
   one of its fixed bytes, or WideTweaks refuses.
+- `variants`: for a game with several builds in use (e.g. a newer Steam build and an older one mods need), a patch can
+  list `[{"build": "...", "pattern": ..., "offset": ..., "value": ...}, ...]` instead of one pattern; WideTweaks uses
+  the one found in the player's file, so each build is detected by itself. Use `??` instead when only addresses differ.
 - `offset`: where the value goes, counted from the start of the pattern.
 - `value`: `float:aspect` writes your width ÷ height as a 32-bit float; `float:zoom` how much a 16:9 picture must grow
   to fill your width (1.34 at 21:9, 2 at 32:9), `float:zoom:1.366` the same capped at 1.366; `bytes:B0 01 C3` writes those bytes.

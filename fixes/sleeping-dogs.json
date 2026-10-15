@@ -8,14 +8,25 @@
     "Remove Black Bars": "Cutscenes and menus fill your whole screen instead of being boxed to 16:9 (gameplay already does).",
     "Ultrawide HUD": "Minimap, health, money and weapon move to your screen edges, and the big map's lists move to the sides; the minimap keeps its shape. The mission-complete screen stays centred on purpose. Tested up to 32:9."
   },
-  "tested": "3440x1440 (Steam, build 979344, October 2026)",
-  "requires": "0.3.0",
+  "tested": "3440x1440 (Steam, build 979344, October 2026); also the 1.0 exe modders use",
+  "requires": "0.5.2",
   "patches": [
     {
       "description": "render mode setter: after copying the block in, clear its cinematic flag (mov byte [flag],0), so cutscenes keep the full-width viewport, aspect and FOV",
-      "pattern": "48 8B 01 48 89 05 A6 84 FC 01 8B 41 08 89 05 A5 84 FC 01 C3 CC CC CC CC CC CC CC CC",
-      "offset": 19,
-      "value": "bytes:C6 05 A0 84 FC 01 00 C3"
+      "variants": [
+        {
+          "build": "Definitive Edition, current Steam",
+          "pattern": "48 8B 01 48 89 05 A6 84 FC 01 8B 41 08 89 05 A5 84 FC 01 C3 CC CC CC CC CC CC CC CC",
+          "offset": 19,
+          "value": "bytes:C6 05 A0 84 FC 01 00 C3"
+        },
+        {
+          "build": "Definitive Edition 1.0 (the build mods use)",
+          "pattern": "48 8B 01 48 89 05 B6 87 FC 01 8B 41 08 89 05 B5 87 FC 01 C3 CC CC CC CC CC CC CC CC",
+          "offset": 19,
+          "value": "bytes:C6 05 B0 87 FC 01 00 C3"
+        }
+      ]
     },
     {
       "file": "UI.big",
@@ -51,7 +62,7 @@
     },
     {
       "description": "UI width factor on screens wider than 16:9 (up to 32:9): 1.0 instead of 16:9 / aspect (movss [scaleX],xmm2 -> xmm0), for the full-width HUD: the minimap, its blips and the objective markers then use the whole screen",
-      "pattern": "F3 0F 10 05 46 A2 FC 00 F3 0F 11 15 9E 0D 9F 01 F3 0F 11 05 9A 0D 9F 01 C3",
+      "pattern": "F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 15 ?? ?? ?? ?? F3 0F 11 05 ?? ?? ?? ?? C3",
       "offset": 11,
       "value": "bytes:05",
       "toggle": "Ultrawide HUD"

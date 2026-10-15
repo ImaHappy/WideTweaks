@@ -118,10 +118,22 @@ for gid, f in widetweaks.fixes().items():
     assert widetweaks.supported(f) and len(widetweaks.version(f['requires'])) == 3, gid
     assert 'setup' not in f or {'text', 'copy'} == f['setup'].keys(), gid
     assert (here / 'docs' / 'fixes' / f'{gid}.md').is_file(), gid
-    for p in f['patches']:
-        assert ('value' in p) != ('layout' in p), (gid, p['description'])
-        if 'value' in p: widetweaks.value(p['value'], 16, 9)
-        bytes.fromhex(p['pattern'].replace('??', '00'))
+    for patch in f['patches']:
+        for p in [{**patch, **v} for v in patch.get('variants', [{}])]:
+            assert ('value' in p) != ('layout' in p), (gid, p['description'])
+            if 'value' in p: widetweaks.value(p['value'], 16, 9)
+            bytes.fromhex(p['pattern'].replace('??', '00'))
+
+# A patch with variants (one per game build) patches whichever build it finds, and refuses a build it doesn't know.
+two_builds = {'description': 'x', 'variants': [{'pattern': '11 22 33', 'value': 'bytes:AA'},
+                                               {'pattern': '44 55 66', 'offset': 1, 'value': 'bytes:BB'}]}
+assert widetweaks.apply(b'\x00\x11\x22\x33', [two_builds], 16, 9) == b'\x00\xaa\x22\x33'
+assert widetweaks.apply(b'\x00\x44\x55\x66', [two_builds], 16, 9) == b'\x00\x44\xbb\x66'
+for bad in (b'\x00\x77', b'\x11\x22\x33\x44\x55\x66'):     # neither build, or both at once
+    try:
+        widetweaks.apply(bad, [two_builds], 16, 9); raise AssertionError('should refuse')
+    except ValueError:
+        pass
 
 # Versions compare as numbers; a fix needing a newer WideTweaks isn't supported.
 assert widetweaks.version('v0.10.0') > widetweaks.version('0.9.1') and widetweaks.version('0.4.0') == (0, 4, 0)

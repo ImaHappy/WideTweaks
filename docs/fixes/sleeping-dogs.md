@@ -1,5 +1,9 @@
 # Sleeping Dogs: Definitive Edition: how the fix works
 
+Works with the current Steam exe and the 1.0 exe the modding community uses (`sdhdship.exe`; every other file is the
+same in both): WideTweaks detects which one you have. The cinematic-flag patch has one variant per build, the rest
+match both.
+
 Tested: 3440x1440 (Steam, build 979344, October 2026).
 
 Gameplay is already Hor+. Remove Black Bars: cutscenes and menus set a cinematic flag (byte 0xA of the render-mode block the game copies in every frame) that forces a centred 16:9 viewport and camera; clearing it after each copy keeps them at full width. That also widens the upgrades screen, whose skill tree then scrolls to the right edge of a 1920 stage while the visible area ends at 1920+dx, so its scroller gets the real edge. Ultrawide HUD: the HUD movie (UI.big) gets a stage as wide as your screen, its edge clips (minimap ring, health, money, weapon, objective popup) move to the screen edges, the low-health tint takes the stage width, and the engine's UI width factor becomes 1.0 so the minimap, blips and objective markers use the whole screen; the world map's objectives/legend move to the sides and its cursor reaches the edges. The Nexus 'Black Bars Fix' (older build, hard-coded 3440x1440) instead overwrote shared 16:9 constants, including a reciprocal lookup table entry, which breaks its minimap; WideTweaks leaves those alone.
