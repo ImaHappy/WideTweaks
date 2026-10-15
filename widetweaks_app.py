@@ -160,7 +160,8 @@ def install_zip(data):
 def listing(folder, offline=False):
     """{file name: download URL} of a folder of the repo's main branch on GitHub (asked at most hourly). The URLs carry
     the file's hash, so a file is downloaded again only when it changed."""
-    items = json.loads(download(f'{API}/contents/{folder}?ref=main', max_age=3600, offline=offline))
+    # v= in the URL: an updated WideTweaks never reuses the list (and so the fix files) an older one cached
+    items = json.loads(download(f'{API}/contents/{folder}?ref=main&v={widetweaks.VERSION}', max_age=3600, offline=offline))
     return {i['name']: f"{RAW}{folder}/{i['name']}?{i['sha']}" for i in items if i['type'] == 'file'}
 
 

@@ -6,11 +6,13 @@ Works with the default DX9 build and the DX11 beta branch "closed" (code DeathIs
 
 ## Ultrawide FOV (DX9 only)
 
-The DX9 build is Vert-: at 21:9 it keeps the 16:9 width of view and cuts the top and bottom, so the picture looks
-zoomed in (DX11 is Hor+). Like the Cheat Engine "Darksiders II Deathinitive Edition FOV v1.4" table, the switch writes a
-fixed field of view where the game stores the camera's (camera + 0x6C, 45 degrees by default) after blending it: 45 at
-16:9, widened for your screen with the height kept (58.2 at 3440x1440, 79.3 at 32:9). The blend call is replaced by
-the store, so the game's own field-of-view changes (zoom) don't apply while it's on.
+The DX9 build asks for a 16:9 projection for its gameplay camera whatever the screen or the Resolution setting, and the
+picture is then stretched across a wider screen (characters too wide, view zoomed in). New code at the end of the code
+section (in its unused bytes; the section size in the header is raised to cover them) checks the aspect every
+projection builder gets: one within 4 ulp of 16:9 is replaced with your screen's width / height. The field of view is
+vertical, so the picture keeps its 16:9 height and shows more at the sides (Hor+); zoom and camera moves work as
+before. Views with other shapes (shadows, reflections) are left alone. Hooked: the projection builder at 0x14074F938,
+its copy at 0x14075D814 and the D3DX-style builder at 0x140D38B9C.
 
 ## Patches
 
