@@ -18,7 +18,7 @@ try:
 except ImportError:
     lz4 = None
 
-VERSION = '0.5.0'                 # a release's tag must be v + this (the release workflow checks)
+VERSION = '0.5.1'                 # a release's tag must be v + this (the release workflow checks)
 TITLE = f"WideTweaks {VERSION} · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
 REPO = 'ImaHappy/WideTweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
