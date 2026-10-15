@@ -135,6 +135,24 @@ for bad in (b'\x00\x77', b'\x11\x22\x33\x44\x55\x66'):     # neither build, or b
     except ValueError:
         pass
 
+# Builds: the installed one is found by its variant; a build-only switch exists only on that build.
+two = {'exe': 'g.exe', 'toggle': 'Fix', 'builds': [{'name': 'A'}, {'name': 'B'}], 'patches': [
+    {'description': 'x', 'variants': [{'build': 'A', 'pattern': '11 22 33', 'value': 'bytes:AA'},
+                                      {'build': 'B', 'pattern': '44 55 66', 'value': 'bytes:BB'}]},
+    {'description': 'y', 'toggle': 'Only A', 'builds': ['A'], 'pattern': '77 88', 'value': 'bytes:99'}]}
+assert widetweaks.toggles(widetweaks.for_build(two, 'B')) == ['Fix'] and widetweaks.toggles(widetweaks.for_build(two, 'A')) == ['Fix', 'Only A']
+with tempfile.TemporaryDirectory() as d:
+    game = pathlib.Path(d)
+    (game / 'g.exe').write_bytes(b'\x44\x55\x66\x00'); assert widetweaks.game_build(two, game) == 'B'
+    assert widetweaks.states(two, game) == {'Fix': 'off'}
+    widetweaks.patch(two, game, 3440, 1440); assert widetweaks.game_build(two, game) == 'B' and widetweaks.states(two, game) == {'Fix': 'on'}
+    (game / 'g.exe').unlink(); (game / 'g.exe.widetweaks-backup').unlink()
+    (game / 'g.exe').write_bytes(b'\x11\x22\x33\x77\x88'); assert widetweaks.game_build(two, game) == 'A'
+    widetweaks.patch(two, game, 3440, 1440); assert (game / 'g.exe').read_bytes() == b'\xaa\x22\x33\x99\x88'
+assert abs(struct.unpack('<f', widetweaks.value('float:fov:45', 1920, 1080))[0] - 45) < 1e-5
+assert abs(struct.unpack('<f', widetweaks.value('float:fov:45', 3440, 1440))[0] - 58.2006) < 1e-3
+assert widetweaks.value('bytes:C7 07+float:fov:45+bytes:90', 16, 9) == b'\xc7\x07' + struct.pack('<f', 45) + b'\x90'
+
 # Versions compare as numbers; a fix needing a newer WideTweaks isn't supported.
 assert widetweaks.version('v0.10.0') > widetweaks.version('0.9.1') and widetweaks.version('0.4.0') == (0, 4, 0)
 assert not widetweaks.supported({'requires': '99.0.0'}) and widetweaks.supported({})

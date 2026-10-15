@@ -50,12 +50,17 @@ Add `fixes/<id>.json`:
 - `variants`: for a game with several builds in use (e.g. a newer Steam build and an older one mods need), a patch can
   list `[{"build": "...", "pattern": ..., "offset": ..., "value": ...}, ...]` instead of one pattern; WideTweaks uses
   the one found in the player's file, so each build is detected by itself. Use `??` instead when only addresses differ.
+- `builds`: for a game whose builds need different switches (Darksiders II: DX9 / DX11), list them as
+  `[{"name": "DX9", "detail": "...", "setup": {...}}, ...]`, name each variant's `build`, and give a switch that only
+  one build has `"builds": ["DX9"]` on its patches. The app shows a version selector set to the installed build.
 - `offset`: where the value goes, counted from the start of the pattern.
 - `value`: `float:aspect` writes your width ÷ height as a 32-bit float; `float:zoom` how much a 16:9 picture must grow
   to fill your width (1.34 at 21:9, 2 at 32:9), `float:zoom:1.366` the same capped at 1.366; `bytes:B0 01 C3` writes those bytes.
 - More values for a centred 1920x1080 UI: `float:left:255` / `float:right:1665` move an x to your screen's left /
   right edge (as far as it was from the 16:9 edge), `int:stage:1920` is the stage width that fills your screen,
   `swfdouble:right:1920` the same as `float:right` stored as an ActionScript 2 double.
+- `float:fov:45`: a field of view (degrees) of 45 at 16:9, widened for your screen with the height kept (Hor+). Values
+  joined by `+` are written one after another, e.g. `bytes:C7 07+float:fov:45` (an instruction and its number).
 - United Front `.big` archives (Sleeping Dogs): their Scaleform movies are decompressed, so patterns can be found in
   them. A patch with `"layout"` instead of a value lays out the movie its pattern is in:
   `{"stage": "wide", "left": [clip names], "right": [...], "widen": [...]}` (`stage: wide` makes the stage as wide as

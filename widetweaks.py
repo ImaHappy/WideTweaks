@@ -12,13 +12,13 @@ finds the game in your Steam libraries, backs up the executable, and writes valu
 
 Never distributes game files: it only edits your own copy, and keeps the original next to it (*.widetweaks-backup).
 """
-import argparse, json, os, pathlib, platform, re, shutil, struct, sys, zlib
+import argparse, json, math, os, pathlib, platform, re, shutil, struct, sys, zlib
 try:
     import lz4.block as lz4
 except ImportError:
     lz4 = None
 
-VERSION = '0.5.2'                 # a release's tag must be v + this (the release workflow checks)
+VERSION = '0.5.3'                 # a release's tag must be v + this (the release workflow checks)
 TITLE = f"WideTweaks {VERSION} · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
 REPO = 'ImaHappy/WideTweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
@@ -98,7 +98,14 @@ def value(kind, width, height):
     picture must grow to fill your width (1.34 at 21:9, 2 at 32:9), 'float:zoom:1.366' the same but at most 1.366
     (e.g. what black bars hid, so nothing is cropped); 'float:left:255' / 'float:right:1665' an x on a centred 1920x1080
     UI moved to your screen's left / right edge as far as it was from the 16:9 one; 'bytes:B0 01 C3' is those bytes
-    (e.g. new instructions)."""
+    (e.g. new instructions); 'float:fov:45' a field of view of 45 degrees at 16:9 widened for your screen, the height
+    kept (Hor+: 45 at 16:9, 58.2 at 3440x1440, 79.3 at 32:9). Parts joined by '+' are written one after another,
+    e.g. 'bytes:C7 44 24 70+float:fov:45' (an instruction and its value)."""
+    if '+' in kind:
+        return b''.join(value(part, width, height) for part in kind.split('+'))
+    if kind.startswith('float:fov:'):
+        wider = max(1.0, width / height * 9 / 16)
+        return struct.pack('<f', math.degrees(2 * math.atan(math.tan(math.radians(float(kind[10:])) / 2) * wider)))
     if kind == 'float:aspect':
         return struct.pack('<f', width / height)
     dx = max(0.0, (1080 * width / height - 1920) / 2)           # 16:9 edge to screen edge, in 1920x1080 units
@@ -488,6 +495,34 @@ def read(path):
     return view(path.read_bytes())
 
 
+def game_build(fix, game):
+    """Which of the fix's "builds" (e.g. DX9 / DX11) the installed game is, found by its variant patterns (in the file,
+    or in the original kept next to it once patched); None if the fix has no builds or the game isn't found."""
+    if 'builds' not in fix or not game:
+        return None
+    exe = game / fix['exe']
+    for path in (exe, exe.with_name(exe.name + BACKUP)):
+        if path.is_file():
+            data = read(path)
+            for p in fix['patches']:
+                for v in p.get('variants', []):
+                    try:
+                        spots(data, [{**p, 'variants': [v]}]); return v.get('build')
+                    except ValueError:
+                        pass
+    return None
+
+
+def for_build(fix, name):
+    """The fix as it applies to one of its builds: only the patches (and variants) for that build. None: all of them."""
+    if name is None:
+        return fix
+    keep = lambda p: name in p.get('builds', [name])
+    patches = [{**p, 'variants': [v for v in p['variants'] if v.get('build', name) == name]} if 'variants' in p else p
+               for p in fix['patches'] if keep(p)]
+    return {**fix, 'patches': [p for p in patches if p.get('variants', [None])]}
+
+
 def toggle(fix, p):
     """The switch a patch belongs to: its "toggle", else the fix's."""
     return p.get('toggle', fix['toggle'])
@@ -503,6 +538,7 @@ def setup(fix, game, width, height, on):
     can be done. Returns the files changed."""
     if running(game):
         raise ValueError('The game is running: close it first')
+    fix = for_build(fix, game_build(fix, game))              # e.g. a DX9-only switch: only on the DX9 build
     plan = []
     for name, patches in files(fix).items():
         exe = game / name
@@ -542,7 +578,9 @@ def restore(fix, game):
 
 
 def states(fix, game):
-    """{switch: 'missing' (a file isn't there), 'off', 'on' or 'unsupported' (unknown game version)}."""
+    """{switch: 'missing' (a file isn't there), 'off', 'on' or 'unsupported' (unknown game version)}; for a fix with
+    builds, the switches of the installed build."""
+    fix = for_build(fix, game_build(fix, game))
     found = {t: set() for t in toggles(fix)}
     for name, patches in files(fix).items():
         exe = game / name if game else None

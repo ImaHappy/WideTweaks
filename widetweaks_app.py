@@ -249,6 +249,7 @@ class App:
         link(foot, '♥ Support me on Ko-fi', KOFI, C['kofi'], (UI, 9), C['bg']).pack(side='right', padx=(0, 14))
 
         self.selected, self.games, self.previews, self.width, self.fitting, self.asked = None, [], {}, WIDTH, False, None
+        self.setup_info = None
         self.build_start()
         self.build_detail()
         self.build_list(load_fixes(offline=True))       # at once from what's on disk; GitHub's list follows (below)
@@ -270,7 +271,7 @@ class App:
         for gid, fix in fixes.items():
             g = {'gid': gid, 'fix': fix, 'game': widetweaks.find_game(fix)}
             if gid in old and old[gid]['fix'] == fix:   # unchanged: keep what was loaded (states, art, icon)
-                g.update({k: v for k, v in old[gid].items() if k in ('states', 'state', 'assets', 'art_raw', 'icon_data', 'shots')})
+                g.update({k: v for k, v in old[gid].items() if k in ('states', 'state', 'build', 'view', 'assets', 'art_raw', 'icon_data', 'shots')})
             g['row'] = tk.Frame(self.list, bg=C['card'], cursor='hand2'); g['row'].pack(fill='x')
             g['icon'] = tk.Label(g['row'], image=self.blank, bg=C['card']); g['icon'].pack(side='left', padx=(12, 8), pady=6)
             g['dot'] = tk.Label(g['row'], text='●', font=(UI, 8), bg=C['card'], fg=C['card']); g['dot'].pack(side='right', padx=12)
@@ -383,6 +384,7 @@ class App:
     def load_states(self):
         games = list(self.games)
         for g in games:
+            g['build'] = widetweaks.game_build(g['fix'], g['game']) if widetweaks.supported(g['fix']) else None
             g['states'] = (widetweaks.states(g['fix'], g['game']) if widetweaks.supported(g['fix'])
                            else {t: 'unsupported' for t in widetweaks.toggles(g['fix'])})
         self.root.after(0, lambda: self.show_states(games))
@@ -455,6 +457,8 @@ class App:
         self.summary = tk.Label(d, font=(UI, 10), fg=C['muted'], bg=C['card'], anchor='w', justify='left', wraplength=round(420 * SCALE))
         self.summary.pack(fill='x', padx=20)
         # A step to do in Steam first (e.g. switch to a beta branch), with a button copying its code; when the fix has one.
+        # Builds (e.g. DX9 / DX11) of a game whose fix differs per build: one button each, the installed one picked.
+        self.builds = tk.Frame(d, bg=C['card'])
         self.setup = tk.Frame(d, bg=C['pick'], highlightthickness=1, highlightbackground=C['warn'])
         self.setup_text = tk.Label(self.setup, font=(UI, 9), fg=C['text'], bg=C['pick'], anchor='w', justify='left',
                                    wraplength=round(320 * SCALE))
@@ -482,10 +486,37 @@ class App:
 
     def copy_setup(self):
         """The setup step's code to the clipboard; the button says so for a moment."""
-        self.root.clipboard_clear(); self.root.clipboard_append(self.selected['fix']['setup']['copy'])
-        self.setup_copy.configure(text=f"{self.selected['fix']['setup']['copy']}   ✓ Copied", fg=C['ok'])
-        self.root.after(1500, lambda: self.selected and 'setup' in self.selected['fix'] and
-                        self.setup_copy.configure(text=f"{self.selected['fix']['setup']['copy']}   ⧉ Copy", fg=C['text']))
+        code = self.setup_info['copy']
+        self.root.clipboard_clear(); self.root.clipboard_append(code)
+        self.setup_copy.configure(text=f"{code}   ✓ Copied", fg=C['ok'])
+        self.root.after(1500, lambda: self.setup_info and self.setup_info['copy'] == code and
+                        self.setup_copy.configure(text=f"{code}   ⧉ Copy", fg=C['text']))
+
+    def shown_build(self, g):
+        """The build whose switches are shown: the one picked above them, else the installed one, else the first."""
+        names = [b['name'] for b in g['fix'].get('builds', [])]
+        return g.get('view') or g.get('build') or (names[0] if names else None)
+
+    def shown_fix(self, g):
+        return widetweaks.for_build(g['fix'], self.shown_build(g))
+
+    def show_builds(self, g):
+        """The build buttons (DX9 / DX11 ...), the shown one highlighted; "installed" marks the one on this PC."""
+        for w in self.builds.winfo_children():
+            w.destroy()
+        if 'builds' not in g['fix']:
+            return self.builds.pack_forget()
+        self.builds.pack(fill='x', padx=20, pady=(12, 0), before=self.rows)
+        tk.Label(self.builds, text='VERSION', font=(MONO, 9), fg=C['faint'], bg=C['card']).pack(side='left', padx=(0, 10))
+        shown = self.shown_build(g)
+        for b in g['fix']['builds']:
+            on = b['name'] == shown
+            text = b['name'] + ('  · installed' if b['name'] == g.get('build') else '')
+            button = tk.Label(self.builds, text=text, font=(UI, 10, 'bold' if on else 'normal'), padx=12, pady=3,
+                              fg=C['bg'] if on else C['text'], bg=C['accent'] if on else C['pick'], cursor='hand2')
+            button.pack(side='left', padx=(0, 6))
+            button.bind('<Button-1>', lambda e, n=b['name']: (g.__setitem__('view', n), self.select(g)))
+            Tip(button, b.get('detail', ''))
 
     def show_art(self, g):
         """The game's Steam header image across the top of the right column, fetched once in the background."""
@@ -509,7 +540,7 @@ class App:
         gets a Compare button; the shots themselves are downloaded when it's clicked."""
         g['previews'] = {}
         local = widetweaks.FIXES / 'previews'
-        for i, name in enumerate(widetweaks.toggles(g['fix'])):
+        for i, name in enumerate(widetweaks.toggles(self.shown_fix(g))):
             for stem in [f"{g['gid']}-{name.lower().replace(' ', '-')}"] + ([g['gid']] if i == 0 else []):
                 files = [f'{stem}-{n}.jpg' for n in ('before', 'after')]
                 if Image and all((local / f).is_file() for f in files):
@@ -548,7 +579,7 @@ class App:
                               pady=3, cursor='hand2')
             button.pack(side='right', padx=12); button.bind('<Button-1>', lambda e: self.update_app())
             return
-        for i, name in enumerate(widetweaks.toggles(g['fix'])):
+        for i, name in enumerate(widetweaks.toggles(self.shown_fix(g))):
             row = tk.Frame(self.rows, bg=C['pick'], highlightthickness=1, highlightbackground=C['line'])
             row.pack(fill='x', pady=(6 if i else 0, 0))
             switch = Switch(row, lambda on, n=name: self.toggle(self.selected, n, on), C['pick'])
@@ -729,9 +760,12 @@ class App:
         self.summary.configure(text=f['summary'])
         where = str(g['game'] / f['exe']) if g['game'] else f"Steam app {f['steam_appid']}, not found in your Steam libraries"
         self.details_text.configure(text=f"Tested: {f['tested']}\nNeeds WideTweaks {f.get('requires', '0.1.0')} or newer\n{where}")
-        if 'setup' in f:                            # a step in Steam first, e.g. a beta branch and its code
-            self.setup_text.configure(text=f['setup']['text'])
-            self.setup_copy.configure(text=f"{f['setup']['copy']}   ⧉ Copy", fg=C['text'])
+        self.show_builds(g)
+        build = next((b for b in f.get('builds', []) if b['name'] == self.shown_build(g)), {})
+        self.setup_info = build.get('setup') or f.get('setup')
+        if self.setup_info:                         # a step in Steam first, e.g. a beta branch and its code
+            self.setup_text.configure(text=self.setup_info['text'])
+            self.setup_copy.configure(text=f"{self.setup_info['copy']}   ⧉ Copy", fg=C['text'])
             self.setup.pack(fill='x', padx=20, pady=(12, 0), before=self.rows)
         else:
             self.setup.pack_forget()
@@ -753,7 +787,11 @@ class App:
         g['state'] = widetweaks.overall(states)
         g['dot'].configure(fg=C[STATES[g['state']][1]])
         if g is self.selected:
+            other = g['game'] and g.get('build') and self.shown_build(g) != g['build']
             for name, (switch, label) in self.switches.items():
+                if other or name not in states:     # another build's switches: shown, not usable here
+                    label.configure(text=f"YOUR GAME IS THE {g.get('build') or 'OTHER'} VERSION", fg=C['faint'])
+                    switch.set(False, enabled=False); continue
                 text, tone = STATES[states[name]]
                 own = message and which in (name, None)
                 label.configure(text=message if own else text, fg=(color or C[tone]) if own else C[tone])
