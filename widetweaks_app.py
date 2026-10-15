@@ -166,8 +166,8 @@ def listing(folder, offline=False):
 
 def load_fixes(offline=False):
     """{id: fix}: each game's fix file from GitHub, else the copy that came with WideTweaks (no network, GitHub down).
-    A GitHub fix that needs a newer WideTweaks gives way to the bundled copy, if there is one; if not, it's kept and
-    its game shows "Update WideTweaks". A git checkout uses only its own fixes/ (the ones being worked on)."""
+    A GitHub fix that needs a newer WideTweaks, or an older one than the bundled copy needs (a stale download), gives way
+    to the bundled copy, if there is one; a game with no bundled copy keeps it and shows "Update WideTweaks". A git checkout uses only its own fixes/ (the ones being worked on)."""
     out = widetweaks.fixes()
     if CHECKOUT:
         return out
@@ -182,7 +182,9 @@ def load_fixes(offline=False):
                 fix = json.loads(download(url, offline=offline))
             except (OSError, ValueError):
                 continue
-            if widetweaks.supported(fix) or gid not in out or not widetweaks.supported(out[gid]):
+            req = lambda x: widetweaks.version(x.get('requires', '0'))
+            # a cached older copy (e.g. kept from before an update) must not hide the newer one built in
+            if gid not in out or (widetweaks.supported(fix) and req(fix) >= req(out[gid])):
                 out[gid] = fix
     return dict(sorted(out.items()))
 

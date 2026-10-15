@@ -18,7 +18,7 @@ try:
 except ImportError:
     lz4 = None
 
-VERSION = '0.5.3'                 # a release's tag must be v + this (the release workflow checks)
+VERSION = '0.5.4'                 # a release's tag must be v + this (the release workflow checks)
 TITLE = f"WideTweaks {VERSION} · Happy's Ultrawide Fixes · imahappy.dev/widetweaks"
 REPO = 'ImaHappy/WideTweaks'
 HERE = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))   # also inside the .exe build
@@ -191,6 +191,12 @@ def running(game):
     for fd in pathlib.Path('/proc').glob('[0-9]*/fd/*'):
         try:
             if os.readlink(fd).startswith(folder):
+                return True
+        except OSError:
+            pass
+    for maps in pathlib.Path('/proc').glob('[0-9]*/maps'):    # also a game that keeps no file open: its exe is mapped
+        try:
+            if ' ' + folder in maps.read_text(errors='ignore'):
                 return True
         except OSError:
             pass
